@@ -8,7 +8,7 @@ require (
 	github.com/creack/pty v1.1.18
 	github.com/google/go-containerregistry v0.20.6
 	github.com/prometheus/client_model v0.6.2
-	github.com/shirou/gopsutil/v4 v4.25.10
+	github.com/shirou/gopsutil/v4 v4.26.10
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
 	github.com/virtual-kubelet/virtual-kubelet v1.12.0
@@ -31,6 +31,7 @@ require (
 	k8s.io/kubernetes v1.35.6
 	k8s.io/metrics v0.35.6
 	k8s.io/utils v0.0.0-20251002143259-bc988d571ff4
+	sigs.k8s.io/yaml v1.6.0
 )
 
 require (
@@ -222,7 +223,6 @@ require (
 	sigs.k8s.io/kustomize/kyaml v0.20.1 // indirect
 	sigs.k8s.io/randfill v1.0.0 // indirect
 	sigs.k8s.io/structured-merge-diff/v6 v6.3.2-0.20260122202528-d9cc6641c482 // indirect
-	sigs.k8s.io/yaml v1.6.0 // indirect
 )
 
 replace github.com/Code-Hex/vz/v3 => ./third_party/vz

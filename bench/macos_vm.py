@@ -9,6 +9,7 @@ Requires a running kvz server with the macos runtime and tart installed.
 import argparse, json, os, platform, re, subprocess, time, socket
 
 HOST = platform.node().split(".")[0].lower()
+NODE = HOST
 TART = os.path.expanduser("~/kvz-tools/tart.app/Contents/MacOS/tart")
 if not os.path.exists(TART):
     TART = "tart"
@@ -72,7 +73,7 @@ def tart_boot(image, cpus, mem_mb):
 def kvz_boot(kc, image, cpus, mem):
     name = f"macbench-{int(time.time())}"
     manifest = {"apiVersion": "v1", "kind": "Pod", "metadata": {"name": name, "namespace": "default"},
-                "spec": {"runtimeClassName": "macos", "terminationGracePeriodSeconds": 5,
+                "spec": {"runtimeClassName": "macos", "terminationGracePeriodSeconds": 5, "nodeName": NODE,
                          "containers": [{"name": "vm", "image": image, "resources": {"limits": {"cpu": str(cpus), "memory": mem}}}]}}
     t0 = time.time()
     subprocess.run(["kubectl", "--kubeconfig", kc, "apply", "-f", "-"], input=json.dumps(manifest), text=True, check=True, capture_output=True)
@@ -89,7 +90,10 @@ def main():
     ap.add_argument("--mem", default="8Gi")
     ap.add_argument("--reps", type=int, default=3)
     ap.add_argument("--skip-tart", action="store_true")
+    ap.add_argument("--node", default=HOST)
     a = ap.parse_args()
+    global NODE
+    NODE = a.node
     mem_mb = int(re.sub(r"Gi$", "", a.mem)) * 1024
     kc = a.kubeconfig
 

@@ -93,7 +93,7 @@ func (nf *nodeFlags) add(c *cobra.Command, defDir string) {
 	f.StringSliceVar(&nf.backends, "runtimes", []string{"linux", "darwin", "macos"}, "pod runtimes to enable")
 	f.StringVar(&nf.defRuntime, "default-runtime", "linux", "runtime for pods without runtimeClassName")
 	f.IntVar(&nf.kubeletPort, "kubelet-port", 10250, "kubelet API port")
-	f.IntVar(&nf.maxPods, "max-pods", 250, "pod capacity")
+	f.IntVar(&nf.maxPods, "max-pods", 1000, "pod capacity")
 }
 
 func serverCmd() *cobra.Command {

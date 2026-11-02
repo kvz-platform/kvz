@@ -1,0 +1,10 @@
+{"suite": "macos-boot", "platform": "kvz", "rep": 0, "apply_to_ready_s": 13.01, "host": "studio", "ts": "2026-11-02T07:19:26Z"}
+{"suite": "macos-perf", "where": "guest-4vcpu", "ncpu": 4, "sha256_16k_1t": "", "sha256_16k_mt": "", "dd_write_s": 1.39556002616882, "dd_read_s": 0.815279960632324, "host": "studio", "ts": "2026-11-02T07:19:33Z"}
+{"suite": "macos-boot", "platform": "kvz", "rep": 1, "apply_to_ready_s": 13.22, "host": "studio", "ts": "2026-11-02T07:20:00Z"}
+{"suite": "macos-boot", "platform": "kvz", "rep": 2, "apply_to_ready_s": 14.2, "host": "studio", "ts": "2026-11-02T07:20:27Z"}
+{"suite": "macos-boot", "platform": "tart", "rep": 0, "clone_s": 0.577, "ip_s": 6.14, "ssh_s": 8.7, "ok": true, "host": "studio", "ts": "2026-11-02T07:20:51Z"}
+{"suite": "macos-boot", "platform": "tart", "rep": 1, "clone_s": 0.043, "ip_s": 6.23, "ssh_s": 11.02, "ok": true, "host": "studio", "ts": "2026-11-02T07:21:06Z"}
+{"suite": "macos-boot", "platform": "tart", "rep": 2, "clone_s": 0.048, "ip_s": 6.16, "ssh_s": 10.0, "ok": true, "host": "studio", "ts": "2026-11-02T07:21:19Z"}
+{"suite": "macos-perf", "where": "host", "ncpu": 18, "sha256_16k_1t": "3207738.66k", "sha256_16k_mt": "43477985.88k", "dd_write_s": 0.348769903182983, "dd_read_s": 0.315750122070312, "host": "studio", "ts": "2026-11-02T07:22:25Z"}
+{"memcpy_GBps":55.7,"ncpu":4,"sha256_1t_MBps":3064.7,"sha256_all_MBps":12619.1,"suite":"cpubench","where":"guest-4vcpu"}
+{"memcpy_GBps":58.7,"ncpu":18,"sha256_1t_MBps":3149.4,"sha256_all_MBps":44021.9,"suite":"cpubench","where":"host-18cpu"}

@@ -200,6 +200,8 @@ func (b *Backend) run(ctx context.Context, pod *corev1.Pod, inst *instance) erro
 		s.PodIPs = []corev1.PodIP{{IP: ip}}
 		rt.SetRunning(s, c.Name, "vz://"+string(pod.UID), false)
 	})
+	waitBanner(ctx, ip, 5*time.Minute)
+	tBanner := time.Since(t0)
 	cl, err := b.dialSSH(ctx, ip, 5*time.Minute)
 	if err != nil {
 		return err
@@ -207,10 +209,10 @@ func (b *Backend) run(ctx context.Context, pod *corev1.Pod, inst *instance) erro
 	defer cl.Close()
 	tSSH := time.Since(t0)
 	klog.InfoS("macOS VM ready", "pod", rt.Key(pod.Namespace, pod.Name), "ip", ip,
-		"clone", tClone, "vmStart", tStart, "ipLease", tIP, "sshReady", tSSH)
+		"clone", tClone, "vmStart", tStart, "ipLease", tIP, "sshBanner", tBanner, "sshReady", tSSH)
 	_ = os.WriteFile(filepath.Join(inst.dir, "timings.json"), []byte(fmt.Sprintf(
-		`{"clone_ms":%d,"vm_start_ms":%d,"ip_ms":%d,"ssh_ms":%d}`,
-		tClone.Milliseconds(), tStart.Milliseconds(), tIP.Milliseconds(), tSSH.Milliseconds())), 0o644)
+		`{"clone_ms":%d,"vm_start_ms":%d,"ip_ms":%d,"ssh_banner_ms":%d,"ssh_ms":%d}`,
+		tClone.Milliseconds(), tStart.Milliseconds(), tIP.Milliseconds(), tBanner.Milliseconds(), tSSH.Milliseconds())), 0o644)
 	b.t.Update(pod.Namespace, pod.Name, func(s *corev1.PodStatus) {
 		rt.SetRunning(s, c.Name, "vz://"+string(pod.UID), true)
 	})
@@ -400,6 +402,25 @@ func leaseFor(mac string) string {
 		}
 	}
 	return ""
+}
+
+// waitBanner returns once the guest's sshd sends its banner (what `tart ip`
+// based tooling usually treats as "booted").
+func waitBanner(ctx context.Context, ip string, timeout time.Duration) {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) && ctx.Err() == nil {
+		c, err := net.DialTimeout("tcp", net.JoinHostPort(ip, "22"), time.Second)
+		if err == nil {
+			_ = c.SetReadDeadline(time.Now().Add(time.Second))
+			buf := make([]byte, 4)
+			n, _ := io.ReadFull(c, buf)
+			c.Close()
+			if n == 4 && string(buf) == "SSH-" {
+				return
+			}
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 }
 
 func (b *Backend) dialSSH(ctx context.Context, ip string, timeout time.Duration) (*ssh.Client, error) {

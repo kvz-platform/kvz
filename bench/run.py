@@ -208,6 +208,25 @@ class LimaK3s:
         sh([LIMACTL, "stop", "k3s"], timeout=300)
 
 
+USER_KC = os.path.join(HOME, ".kube", "config")
+
+
+class KubeconfigGuard:
+    """`container cluster create/delete` rewrite ~/.kube/config (and switch the
+    current context) unconditionally; snapshot and restore it around them."""
+
+    def __enter__(self):
+        self.saved = open(USER_KC, "rb").read() if os.path.exists(USER_KC) else None
+        return self
+
+    def __exit__(self, *a):
+        if self.saved is None:
+            if os.path.exists(USER_KC):
+                os.unlink(USER_KC)
+        else:
+            open(USER_KC, "wb").write(self.saved)
+
+
 class AppleCluster:
     name = "apple-cluster"
     regex = CONTAINER_DAEMONS
@@ -221,17 +240,33 @@ class AppleCluster:
 
     def start(self):
         def run():
-            sh([CONTAINER, "cluster", "create", "--name", "bench", "--cpus", str(self.cpus), "--memory", self.mem], wrap=True, timeout=900)
-            sh([CONTAINER, "cluster", "write-config", "--name", "bench", "--kubeconfig", self.kc], wrap=True)
-        try:
-            os.unlink(self.kc)
-        except FileNotFoundError:
-            pass
+            with KubeconfigGuard():
+                r = sh([CONTAINER, "cluster", "create", "--name", "bench", "--cpus", str(self.cpus), "--memory", self.mem], wrap=True, timeout=900)
+                if r.returncode != 0:
+                    log("cluster create failed:", r.stdout[-1500:], r.stderr[-1500:])
+            sh([CONTAINER, "cluster", "write-config", "--name", "bench", "--kubeconfig", self.kc + ".tmp"], wrap=True)
+            # write-config does not set current-context in a fresh file
+            sh([KUBECTL, "--kubeconfig", self.kc + ".tmp", "config", "use-context", "bench"])
+            # the published 127.0.0.1:6445 port-forward resets connections once
+            # the creating CLI exits; talk to the node's vmnet IP directly
+            try:
+                info = json.loads(sh([CONTAINER, "inspect", "bench"], wrap=True).stdout)[0]
+                ip = info["status"]["networks"][0]["ipv4Address"].split("/")[0]
+                sh([KUBECTL, "--kubeconfig", self.kc + ".tmp", "config", "set-cluster", "bench", f"--server=https://{ip}:6443"])
+            except Exception as e:
+                log("could not resolve node IP:", e)
+            os.rename(self.kc + ".tmp", self.kc)
+        for f in (self.kc, self.kc + ".tmp"):
+            try:
+                os.unlink(f)
+            except FileNotFoundError:
+                pass
         self.t = threading.Thread(target=run, daemon=True)
         self.t.start()
 
     def stop(self):
-        sh([CONTAINER, "cluster", "delete", "--name", "bench"], wrap=True, timeout=300)
+        with KubeconfigGuard():
+            sh([CONTAINER, "cluster", "delete", "--name", "bench"], wrap=True, timeout=300)
 
 
 # ---------------------------------------------------------------- suites

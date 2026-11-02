@@ -176,6 +176,7 @@ func (cp *ControlPlane) Run(ctx context.Context, ready chan<- struct{}) error {
 		"--authorization-mode=Node,RBAC",
 		"--enable-admission-plugins=NodeRestriction",
 		"--allow-privileged=true",
+		"--kubelet-preferred-address-types=InternalIP,Hostname",
 		"--profiling=false",
 		"--anonymous-auth=false",
 		"--endpoint-reconciler-type=lease",

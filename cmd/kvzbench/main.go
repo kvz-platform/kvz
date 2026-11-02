@@ -13,6 +13,7 @@ import (
 	"math"
 	"os"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -73,6 +74,7 @@ var (
 	timeout    = flag.Duration("timeout", 10*time.Minute, "suite timeout")
 	cpuReq     = flag.String("cpu", "", "cpu request/limit per pod")
 	memReq     = flag.String("memory", "", "memory request/limit per pod")
+	extRes     = flag.String("extended", "", "extended resource request, e.g. kvz.dev/macos-vm=1")
 	hold       = flag.Duration("hold", 0, "keep pods running this long after all are ready (for footprint sampling)")
 	readyFile  = flag.String("ready-file", "", "touch this file once all pods are ready")
 )
@@ -287,6 +289,12 @@ func podSuite(ctx context.Context, cs *kubernetes.Clientset) {
 	if *memReq != "" {
 		res.Limits[corev1.ResourceMemory] = resource.MustParse(*memReq)
 		res.Requests[corev1.ResourceMemory] = resource.MustParse(*memReq)
+	}
+	if *extRes != "" {
+		kv := strings.SplitN(*extRes, "=", 2)
+		q := resource.MustParse(kv[1])
+		res.Limits[corev1.ResourceName(kv[0])] = q
+		res.Requests[corev1.ResourceName(kv[0])] = q
 	}
 	mk := func(i int) *corev1.Pod {
 		grace := int64(1)

@@ -73,6 +73,8 @@ var (
 	timeout    = flag.Duration("timeout", 10*time.Minute, "suite timeout")
 	cpuReq     = flag.String("cpu", "", "cpu request/limit per pod")
 	memReq     = flag.String("memory", "", "memory request/limit per pod")
+	hold       = flag.Duration("hold", 0, "keep pods running this long after all are ready (for footprint sampling)")
+	readyFile  = flag.String("ready-file", "", "touch this file once all pods are ready")
 )
 
 func main() {
@@ -353,6 +355,12 @@ func podSuite(ctx context.Context, cs *kubernetes.Clientset) {
 		"pods_per_s": math.Round(float64(len(rdy))/readyWall.Seconds()*100) / 100,
 		"scheduled":  stats(sched), "running": stats(run_), "ready": stats(rdy), "nodes": nodes})
 
+	if *readyFile != "" {
+		_ = os.WriteFile(*readyFile, []byte("ready"), 0o644)
+	}
+	if *hold > 0 {
+		time.Sleep(*hold)
+	}
 	deleting.Store(true)
 	td := time.Now()
 	// default grace (1s from the spec) so the runtime actually tears down

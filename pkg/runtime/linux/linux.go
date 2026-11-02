@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -35,6 +36,12 @@ type Backend struct {
 	mu   sync.Mutex
 	pods map[string]*podState
 
+	// Apple's container daemon serializes VM starts (~2/s per host regardless
+	// of client concurrency; see bench/container_scaling.py). Gating starts
+	// keeps throughput identical but makes pods become ready FIFO instead of
+	// all at the end of a burst.
+	startGate chan struct{}
+
 	pollMu  sync.Mutex
 	waiters map[string][]chan string // container name -> waiters for IP
 	kick    chan struct{}
@@ -53,6 +60,11 @@ func New(dataDir, hostIP string, t *rt.Tracker, vols *volumes.Materializer) *Bac
 	}
 	b := &Backend{bin: bin, dir: filepath.Join(dataDir, "pods"), hostIP: hostIP, t: t, vols: vols,
 		pods: map[string]*podState{}, waiters: map[string][]chan string{}, kick: make(chan struct{}, 1)}
+	n := 2
+	if v, err := strconv.Atoi(os.Getenv("KVZ_LINUX_START_CONCURRENCY")); err == nil && v > 0 {
+		n = v
+	}
+	b.startGate = make(chan struct{}, n)
 	go b.ipPoller()
 	return b
 }
@@ -149,8 +161,22 @@ func (b *Backend) supervise(ctx context.Context, pod *corev1.Pod, c corev1.Conta
 		cmd := exec.Command(b.bin, b.runArgs(pod, c, mounts)...)
 		cmd.Stdout, cmd.Stderr = logf, logf
 		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		select {
+		case b.startGate <- struct{}{}:
+		case <-ctx.Done():
+			logf.Close()
+			return
+		}
+		gated := true
+		release := func() {
+			if gated {
+				gated = false
+				<-b.startGate
+			}
+		}
 		ipc := b.waitIP(name)
 		if err := cmd.Start(); err != nil {
+			release()
 			logf.Close()
 			b.t.Update(pod.Namespace, pod.Name, func(s *corev1.PodStatus) { rt.SetTerminated(s, c.Name, 127, "StartError") })
 			return
@@ -163,6 +189,7 @@ func (b *Backend) supervise(ctx context.Context, pod *corev1.Pod, c corev1.Conta
 		for {
 			select {
 			case ip := <-ipc:
+				release()
 				b.t.Update(pod.Namespace, pod.Name, func(s *corev1.PodStatus) {
 					if primary && ip != "" {
 						s.PodIP = ip
@@ -178,6 +205,7 @@ func (b *Backend) supervise(ctx context.Context, pod *corev1.Pod, c corev1.Conta
 				break wait
 			}
 		}
+		release()
 		if !exited {
 			b.cancelWait(name, ipc)
 			grace := 10

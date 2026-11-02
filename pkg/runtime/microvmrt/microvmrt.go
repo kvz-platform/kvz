@@ -314,6 +314,10 @@ func (b *Backend) buildSpec(p *corev1.Pod, ps *pod) (*spec, []microvm.Share, err
 	sp.Hosts = hostsFile(p, ps.ip.String(), sp.Hostname)
 	if p.Spec.HostNetwork {
 		sp.HostNetwork, sp.NodeIP = true, b.hostIP
+		// like the kubelet: host-network pods see the node's own /etc/hosts
+		if b, err := os.ReadFile("/etc/hosts"); err == nil {
+			sp.Hosts = string(b)
+		}
 	}
 	shares := []microvm.Share{{Tag: "pod", Path: ps.dir}}
 	seen := map[string]bool{}

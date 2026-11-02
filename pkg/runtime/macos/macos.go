@@ -211,9 +211,7 @@ func (b *Backend) run(ctx context.Context, pod *corev1.Pod, inst *instance) erro
 		s.PodIPs = []corev1.PodIP{{IP: ip}}
 		rt.SetRunning(s, c.Name, "vz://"+string(pod.UID), false)
 	})
-	b.waitBanner(ctx, ip, 5*time.Minute)
-	tBanner := time.Since(t0)
-	cl, err := b.dialSSH(ctx, ip, 5*time.Minute)
+	cl, tBanner, err := b.connectSSH(ctx, ip, 5*time.Minute, t0)
 	if err != nil {
 		return err
 	}
@@ -430,25 +428,6 @@ func leaseFor(mac string) string {
 	return ""
 }
 
-// waitBanner returns once the guest's sshd sends its banner (what `tart ip`
-// based tooling usually treats as "booted").
-func (b *Backend) waitBanner(ctx context.Context, ip string, timeout time.Duration) {
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) && ctx.Err() == nil {
-		c, err := b.dial(ctx, net.JoinHostPort(ip, "22"))
-		if err == nil {
-			_ = c.SetReadDeadline(time.Now().Add(time.Second))
-			buf := make([]byte, 4)
-			n, _ := io.ReadFull(c, buf)
-			c.Close()
-			if n == 4 && string(buf) == "SSH-" {
-				return
-			}
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-}
-
 // dial reaches the guest: through the pod network when attached to it.
 func (b *Backend) dial(ctx context.Context, addr string) (net.Conn, error) {
 	dctx, cancel := context.WithTimeout(ctx, time.Second)
@@ -458,6 +437,55 @@ func (b *Backend) dial(ctx context.Context, addr string) (net.Conn, error) {
 	}
 	var d net.Dialer
 	return d.DialContext(dctx, "tcp", addr)
+}
+
+// connectSSH waits for the guest's sshd and logs in, without ever closing a
+// connection unauthenticated: OpenSSH's PerSourcePenalties (macOS 26)
+// penalizes such connections per source address, and every probe from the
+// pod network shares one source (the gateway), so banner-probing stalled
+// logins by up to 75 s. "connection refused" (sshd not up yet) costs nothing.
+func (b *Backend) connectSSH(ctx context.Context, ip string, timeout time.Duration, t0 time.Time) (*ssh.Client, time.Duration, error) {
+	cfg := &ssh.ClientConfig{
+		User:            b.user,
+		Auth:            []ssh.AuthMethod{ssh.Password(b.password)},
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+	}
+	deadline := time.Now().Add(timeout)
+	var tBanner time.Duration
+	backoff := 500 * time.Millisecond
+	var last error
+	for time.Now().Before(deadline) {
+		c, err := b.dial(ctx, net.JoinHostPort(ip, "22"))
+		if err != nil {
+			last = err
+			select {
+			case <-ctx.Done():
+				return nil, 0, ctx.Err()
+			case <-time.After(100 * time.Millisecond):
+			}
+			continue
+		}
+		if tBanner == 0 {
+			tBanner = time.Since(t0)
+		}
+		_ = c.SetDeadline(time.Now().Add(30 * time.Second))
+		conn, chans, reqs, err := ssh.NewClientConn(c, ip+":22", cfg)
+		if err == nil {
+			_ = c.SetDeadline(time.Time{})
+			return ssh.NewClient(conn, chans, reqs), tBanner, nil
+		}
+		c.Close()
+		last = err
+		select {
+		case <-ctx.Done():
+			return nil, 0, ctx.Err()
+		case <-time.After(backoff):
+		}
+		if backoff < 4*time.Second {
+			backoff *= 2
+		}
+	}
+	return nil, 0, fmt.Errorf("ssh to %s: %w", ip, last)
 }
 
 func (b *Backend) dialSSH(ctx context.Context, ip string, timeout time.Duration) (*ssh.Client, error) {
@@ -509,12 +537,20 @@ func (b *Backend) Stop(ctx context.Context, pod *corev1.Pod) error {
 	}
 	inst.cancel()
 	if inst.vm != nil && inst.vm.State() != vz.VirtualMachineStateStopped {
-		if inst.vm.CanRequestStop() {
-			_, _ = inst.vm.RequestStop()
+		// The pod's disk is a throwaway APFS clone: honor the pod's grace
+		// period for a guest shutdown, never more, then hard-stop.
+		grace := 30 * time.Second
+		if pod.Spec.TerminationGracePeriodSeconds != nil {
+			grace = time.Duration(*pod.Spec.TerminationGracePeriodSeconds) * time.Second
 		}
-		select {
-		case <-waitStopped(inst.vm):
-		case <-time.After(5 * time.Second):
+		if grace > 0 && inst.vm.CanRequestStop() {
+			_, _ = inst.vm.RequestStop()
+			select {
+			case <-waitStopped(inst.vm):
+			case <-time.After(grace):
+			}
+		}
+		if inst.vm.State() != vz.VirtualMachineStateStopped {
 			_ = inst.vm.Stop()
 		}
 	}

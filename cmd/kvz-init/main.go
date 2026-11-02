@@ -45,6 +45,7 @@ type Container struct {
 }
 
 type Spec struct {
+	MTU        int         `json:"mtu"`
 	IP         string      `json:"ip"`
 	Mask       int         `json:"mask"`
 	GW         string      `json:"gw"`
@@ -155,7 +156,7 @@ func main() {
 		_ = unix.Sethostname([]byte(spec.Hostname))
 	}
 	netDone := make(chan error, 1)
-	go func() { netDone <- setupNetwork(spec.IP, spec.Mask, spec.GW) }()
+	go func() { netDone <- setupNetwork(spec.IP, spec.Mask, spec.GW, spec.MTU) }()
 
 	// Per image: one read-only virtiofs lower; per container: overlay root.
 	roots := map[string]string{}

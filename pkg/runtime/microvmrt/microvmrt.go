@@ -117,6 +117,7 @@ type mspec struct {
 }
 
 type spec struct {
+	MTU        int      `json:"mtu"`
 	IP         string   `json:"ip"`
 	Mask       int      `json:"mask"`
 	GW         string   `json:"gw"`
@@ -161,7 +162,7 @@ func (b *Backend) Start(ctx context.Context, p *corev1.Pod) error {
 }
 
 func (b *Backend) buildSpec(p *corev1.Pod, ps *pod) (*spec, []microvm.Share, error) {
-	sp := &spec{Hostname: p.Name, DNS: b.dns, IP: ps.ip.String(), Mask: b.pnet.Bits(), GW: b.pnet.GW.String()}
+	sp := &spec{Hostname: p.Name, DNS: b.dns, IP: ps.ip.String(), Mask: b.pnet.Bits(), GW: b.pnet.GW.String(), MTU: b.pnet.MTU}
 	if p.Spec.Hostname != "" {
 		sp.Hostname = p.Spec.Hostname
 	}
@@ -334,7 +335,7 @@ func (b *Backend) run(ctx context.Context, p *corev1.Pod, ps *pod) error {
 		return err
 	}
 	vm, err := microvm.Boot(microvm.Config{Kernel: b.kernel, Initrd: b.initrd, IP: ps.ip, GW: b.pnet.GW, Mask: b.pnet.Bits(),
-		CPUs: vcpus(p), MemoryMB: memMB(p), Shares: shares, ConsoleLog: consoleLog(ps.dir), NetFile: nic})
+		CPUs: vcpus(p), MemoryMB: memMB(p), Shares: shares, ConsoleLog: consoleLog(ps.dir), NetFile: nic, MTU: b.pnet.MTU})
 	if err != nil {
 		nic.Close()
 		return err

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"runtime"
+	"strconv"
 	"time"
 
 	dto "github.com/prometheus/client_model/go"
@@ -248,7 +249,8 @@ func Run(ctx context.Context, o Options) error {
 	if cidr == "" {
 		cidr = "10.88.0.0/16"
 	}
-	pn, err := podnet.New(cidr, 0)
+	mtu, _ := strconv.Atoi(os.Getenv("KVZ_POD_MTU"))
+	pn, err := podnet.New(cidr, mtu)
 	if err != nil {
 		return fmt.Errorf("pod network: %w", err)
 	}

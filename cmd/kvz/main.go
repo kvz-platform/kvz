@@ -100,6 +100,7 @@ func serverCmd() *cobra.Command {
 	var nf nodeFlags
 	var apiPort, etcdPort int
 	var disableAgent, noSync bool
+	var etcdSync string
 	var sans []string
 	home, _ := os.UserHomeDir()
 	c := &cobra.Command{
@@ -109,6 +110,9 @@ func serverCmd() *cobra.Command {
 			ctx, cancel := signalCtx()
 			defer cancel()
 			t0 := time.Now()
+			if os.Getenv("KVZ_ETCD_SYNC") == "" {
+				os.Setenv("KVZ_ETCD_SYNC", etcdSync)
+			}
 			cp, err := controlplane.Prepare(controlplane.Config{
 				DataDir: filepath.Join(nf.dataDir, "server"), BindAddress: "0.0.0.0", AdvertiseIP: net.ParseIP(nf.nodeIP),
 				ExtraSANs: append(sans, nf.name), APIPort: apiPort, EtcdPort: etcdPort,
@@ -119,8 +123,14 @@ func serverCmd() *cobra.Command {
 			}
 			// External admin kubeconfig.
 			adminCrt, adminKey := filepath.Join(cp.CA.Dir, "admin.crt"), filepath.Join(cp.CA.Dir, "admin.key")
+			// Local kubeconfig talks to loopback: routing to our own Tailscale/LAN
+			// address went through the VPN's network extension and cut API
+			// throughput ~3x. kubeconfig-external.yaml is for other machines.
 			ext := filepath.Join(nf.dataDir, "kubeconfig.yaml")
-			if err := pki.WriteKubeconfig(ext, fmt.Sprintf("https://%s:%d", nf.nodeIP, apiPort), filepath.Join(cp.CA.Dir, "ca.crt"), adminCrt, adminKey, "admin"); err != nil {
+			if err := pki.WriteKubeconfig(ext, fmt.Sprintf("https://127.0.0.1:%d", apiPort), filepath.Join(cp.CA.Dir, "ca.crt"), adminCrt, adminKey, "admin"); err != nil {
+				return err
+			}
+			if err := pki.WriteKubeconfig(filepath.Join(nf.dataDir, "kubeconfig-external.yaml"), fmt.Sprintf("https://%s:%d", nf.nodeIP, apiPort), filepath.Join(cp.CA.Dir, "ca.crt"), adminCrt, adminKey, "admin"); err != nil {
 				return err
 			}
 			token, secret, err := join.LoadOrCreateToken(filepath.Join(nf.dataDir, "server"), cp.CA)
@@ -174,6 +184,7 @@ func serverCmd() *cobra.Command {
 	c.Flags().IntVar(&etcdPort, "etcd-port", 2379, "embedded etcd client port (peer uses +1)")
 	c.Flags().BoolVar(&disableAgent, "disable-agent", false, "do not run a local node")
 	c.Flags().BoolVar(&noSync, "etcd-unsafe-no-fsync", false, "benchmark knob: disable etcd fsync")
+	c.Flags().StringVar(&etcdSync, "etcd-sync", "barrier", "etcd WAL sync on macOS: full (F_FULLFSYNC), barrier (F_BARRIERFSYNC, crash-consistent), none")
 	c.Flags().StringSliceVar(&sans, "tls-san", nil, "extra apiserver SANs")
 	return c
 }

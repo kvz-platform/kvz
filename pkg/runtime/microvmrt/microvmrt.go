@@ -50,6 +50,7 @@ type Backend struct {
 
 	mu   sync.Mutex
 	pods map[string]*pod
+	pre  map[string]net.IP // IPs reserved by PrepareIP before Start
 
 	// slots caps concurrently running pod VMs below Virtualization.framework's
 	// per-host limit (~127, measured): beyond it VZ fails VM starts outright.
@@ -98,7 +99,7 @@ func New(dataDir string, t *rt.Tracker, vols *volumes.Materializer, pn *podnet.N
 	}
 	return &Backend{dir: filepath.Join(dataDir, "mvm"), kernel: DefaultKernel(), initrd: initrd, t: t, vols: vols,
 		images: image.NewStore(filepath.Join(home, ".kvz", "images")), pnet: pn, dns: []string{pn.GW.String()},
-		pods: map[string]*pod{}, slots: make(chan struct{}, maxVMs)}, nil
+		pods: map[string]*pod{}, pre: map[string]net.IP{}, slots: make(chan struct{}, maxVMs)}, nil
 }
 
 func (b *Backend) Handler() string { return "linux" }
@@ -138,11 +139,36 @@ type spec struct {
 	Mounts     []mspec  `json:"mounts"`
 }
 
-func (b *Backend) Start(ctx context.Context, p *corev1.Pod) error {
+// PrepareIP reserves the pod's IP early so status.podIP env refs resolve.
+func (b *Backend) PrepareIP(p *corev1.Pod) string {
 	key := rt.Key(p.Namespace, p.Name)
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if ip, ok := b.pre[key]; ok {
+		return ip.String()
+	}
+	if ps, ok := b.pods[key]; ok {
+		return ps.ip.String()
+	}
 	ip, err := b.pnet.Alloc()
 	if err != nil {
-		return err
+		return ""
+	}
+	b.pre[key] = ip
+	return ip.String()
+}
+
+func (b *Backend) Start(ctx context.Context, p *corev1.Pod) error {
+	key := rt.Key(p.Namespace, p.Name)
+	b.mu.Lock()
+	ip, ok := b.pre[key]
+	delete(b.pre, key)
+	b.mu.Unlock()
+	if !ok {
+		var err error
+		if ip, err = b.pnet.Alloc(); err != nil {
+			return err
+		}
 	}
 	dir := filepath.Join(b.dir, string(p.UID))
 	_ = os.MkdirAll(filepath.Join(dir, "logs"), 0o755)

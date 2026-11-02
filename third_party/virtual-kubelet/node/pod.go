@@ -72,6 +72,11 @@ func (pc *PodController) createOrUpdatePod(ctx context.Context, pod *corev1.Pod)
 	if !pc.skipDownwardAPIResolution {
 		// We do this so we don't mutate the pod from the informer cache
 		pod = pod.DeepCopy()
+		// kvz patch: let the provider assign the pod IP before env resolution,
+		// as the kubelet does by creating the sandbox first (status.podIP refs).
+		if pp, ok := pc.provider.(interface{ PreparePodNetwork(*corev1.Pod) }); ok {
+			pp.PreparePodNetwork(pod)
+		}
 		if err := podutils.PopulateEnvironmentVariables(ctx, pod, pc.resourceManager, pc.recorder); err != nil {
 			span.SetStatus(err)
 			return err

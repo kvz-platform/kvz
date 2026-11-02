@@ -491,7 +491,28 @@ func podFieldSelectorRuntimeValue(fs *corev1.ObjectFieldSelector, pod *corev1.Po
 		return pod.Spec.NodeName, nil
 	case "spec.serviceAccountName":
 		return pod.Spec.ServiceAccountName, nil
-
+	// kvz patch: the status fields the kubelet supports (IPs are pre-assigned
+	// by the provider's PreparePodNetwork hook).
+	case "status.podIP":
+		return pod.Status.PodIP, nil
+	case "status.podIPs":
+		ips := make([]string, 0, len(pod.Status.PodIPs))
+		for _, ip := range pod.Status.PodIPs {
+			ips = append(ips, ip.IP)
+		}
+		return strings.Join(ips, ","), nil
+	case "status.hostIP":
+		return pod.Status.HostIP, nil
+	case "status.hostIPs":
+		ips := make([]string, 0, len(pod.Status.HostIPs))
+		for _, ip := range pod.Status.HostIPs {
+			ips = append(ips, ip.IP)
+		}
+		return strings.Join(ips, ","), nil
+	case "spec.restartPolicy":
+		return string(pod.Spec.RestartPolicy), nil
+	case "spec.schedulerName":
+		return pod.Spec.SchedulerName, nil
 	}
 	return ExtractFieldPathAsString(pod, internalFieldPath)
 }

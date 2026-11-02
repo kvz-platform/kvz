@@ -89,6 +89,25 @@ func (p *Provider) CreatePod(ctx context.Context, pod *corev1.Pod) error {
 	return b.Start(ctx, pod)
 }
 
+// PreparePodNetwork fills status IPs before env resolution (see vendored VK).
+func (p *Provider) PreparePodNetwork(pod *corev1.Pod) {
+	pod.Status.HostIP = p.hostIP
+	pod.Status.HostIPs = []corev1.HostIP{{IP: p.hostIP}}
+	b, err := p.backendFor(pod)
+	if err != nil {
+		return
+	}
+	if pr, ok := b.(interface{ PrepareIP(*corev1.Pod) string }); ok {
+		if ip := pr.PrepareIP(pod); ip != "" {
+			pod.Status.PodIP = ip
+			pod.Status.PodIPs = []corev1.PodIP{{IP: ip}}
+		}
+	} else if b.Handler() == "darwin" {
+		pod.Status.PodIP = p.hostIP
+		pod.Status.PodIPs = []corev1.PodIP{{IP: p.hostIP}}
+	}
+}
+
 func (p *Provider) UpdatePod(ctx context.Context, pod *corev1.Pod) error { return nil }
 
 func (p *Provider) DeletePod(ctx context.Context, pod *corev1.Pod) error {
@@ -155,8 +174,51 @@ func (p *Provider) RunInContainer(ctx context.Context, ns, name, c string, cmd [
 	return b.Exec(ctx, pod, c, cmd, attach)
 }
 
+// AttachToContainer streams the container's output (from the start) until it
+// exits; stdin is not wired (containers' stdio is captured to their log).
 func (p *Provider) AttachToContainer(ctx context.Context, ns, name, c string, attach api.AttachIO) error {
-	return fmt.Errorf("attach not supported")
+	pod, b, err := p.lookup(ns, name)
+	if err != nil {
+		return err
+	}
+	if c == "" && len(pod.Spec.Containers) > 0 {
+		c = pod.Spec.Containers[0].Name
+	}
+	actx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	rc, err := b.Logs(actx, pod, c, api.ContainerLogOpts{Follow: true})
+	if err != nil {
+		return err
+	}
+	defer rc.Close()
+	go func() {
+		// stop following once the container has terminated
+		t := time.NewTicker(200 * time.Millisecond)
+		defer t.Stop()
+		for {
+			select {
+			case <-actx.Done():
+				return
+			case <-t.C:
+				cur := p.t.Get(ns, name)
+				if cur == nil {
+					cancel()
+					return
+				}
+				for _, cs := range cur.Status.ContainerStatuses {
+					if cs.Name == c && cs.State.Terminated != nil {
+						time.Sleep(300 * time.Millisecond) // drain
+						cancel()
+						return
+					}
+				}
+			}
+		}
+	}()
+	if out := attach.Stdout(); out != nil {
+		_, _ = io.Copy(out, rc)
+	}
+	return nil
 }
 
 func (p *Provider) GetStatsSummary(context.Context) (*statsv1alpha1.Summary, error) {

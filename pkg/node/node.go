@@ -17,6 +17,7 @@ import (
 	"os"
 	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -96,8 +97,68 @@ func (p *Provider) CreatePod(ctx context.Context, pod *corev1.Pod) error {
 	}
 	pod = pod.DeepCopy()
 	rt.InitStatus(pod, p.hostIP)
+	if conflict := p.hostPortConflict(pod); conflict != "" {
+		// kubelet admission: reject instead of starting (pods bound with
+		// spec.nodeName bypass the scheduler's NodePorts filter)
+		pod.Status.Phase = corev1.PodFailed
+		pod.Status.Reason = "NodePorts"
+		pod.Status.Message = "Pod was rejected: Node didn't have free ports for the requested pod ports (" + conflict + ")"
+		p.t.Put(pod)
+		p.t.Event(pod.Namespace, pod.Name, corev1.EventTypeWarning, "NodePorts", "%s", pod.Status.Message)
+		p.t.Update(pod.Namespace, pod.Name, func(*corev1.PodStatus) {})
+		return nil
+	}
 	p.t.Put(pod)
 	return b.Start(ctx, pod)
+}
+
+type hostPortKey struct {
+	ip    string
+	port  int32
+	proto corev1.Protocol
+}
+
+func hostPorts(pod *corev1.Pod) []hostPortKey {
+	var out []hostPortKey
+	for _, c := range append(append([]corev1.Container{}, pod.Spec.InitContainers...), pod.Spec.Containers...) {
+		for _, cp := range c.Ports {
+			if cp.HostPort == 0 {
+				continue
+			}
+			proto := cp.Protocol
+			if proto == "" {
+				proto = corev1.ProtocolTCP
+			}
+			ip := cp.HostIP
+			if ip == "" {
+				ip = "0.0.0.0"
+			}
+			out = append(out, hostPortKey{ip, cp.HostPort, proto})
+		}
+	}
+	return out
+}
+
+// hostPortConflict reports a hostPort of pod already used by an active pod
+// on this node (same port and protocol, overlapping host IP).
+func (p *Provider) hostPortConflict(pod *corev1.Pod) string {
+	want := hostPorts(pod)
+	if len(want) == 0 {
+		return ""
+	}
+	for _, other := range p.t.List() {
+		if other.UID == pod.UID || other.Status.Phase == corev1.PodSucceeded || other.Status.Phase == corev1.PodFailed {
+			continue
+		}
+		for _, h := range hostPorts(other) {
+			for _, w := range want {
+				if h.port == w.port && h.proto == w.proto && (h.ip == w.ip || h.ip == "0.0.0.0" || w.ip == "0.0.0.0") {
+					return fmt.Sprintf("%s/%d", strings.ToLower(string(w.proto)), w.port)
+				}
+			}
+		}
+	}
+	return ""
 }
 
 // PreparePodNetwork fills status IPs before env resolution (see vendored VK).

@@ -134,9 +134,10 @@ func runServiceProxy(ctx context.Context, f informers.SharedInformerFactory, pn 
 				if proto == "TCP" {
 					switch svc.Spec.Type {
 					case corev1.ServiceTypeLoadBalancer:
-						lb.want(int(sp.Port), backends)
+						lb.want(int(sp.Port), backends, affinity)
+						lb.want(int(sp.NodePort), backends, affinity) // LoadBalancer services are NodePorts too
 					case corev1.ServiceTypeNodePort:
-						lb.want(int(sp.NodePort), backends)
+						lb.want(int(sp.NodePort), backends, affinity)
 					}
 				}
 			}
@@ -168,9 +169,10 @@ func nudge(c chan struct{}) {
 // services listen on the host and proxy to ready backends through the pod
 // network (pod IPs are not routable from macOS).
 type hostLB struct {
-	pn        *podnet.Net
-	listeners map[int]*lbListener
-	pending   map[int][]podnet.Backend
+	pn              *podnet.Net
+	listeners       map[int]*lbListener
+	pending         map[int][]podnet.Backend
+	pendingAffinity map[int]time.Duration
 }
 
 type lbListener struct {
@@ -178,15 +180,23 @@ type lbListener struct {
 	mu       sync.Mutex
 	backends []podnet.Backend
 	rr       int
+	affinity time.Duration // sessionAffinity: ClientIP timeout (0 = none)
+	sticky   map[string]stickyChoice
+}
+
+type stickyChoice struct {
+	b    podnet.Backend
+	last time.Time
 }
 
 func newHostLB(pn *podnet.Net) *hostLB {
-	return &hostLB{pn: pn, listeners: map[int]*lbListener{}, pending: map[int][]podnet.Backend{}}
+	return &hostLB{pn: pn, listeners: map[int]*lbListener{}, pending: map[int][]podnet.Backend{}, pendingAffinity: map[int]time.Duration{}}
 }
 
-func (h *hostLB) want(port int, b []podnet.Backend) {
+func (h *hostLB) want(port int, b []podnet.Backend, affinity time.Duration) {
 	if port > 0 {
 		h.pending[port] = append(h.pending[port], b...)
+		h.pendingAffinity[port] = affinity
 	}
 }
 
@@ -211,9 +221,43 @@ func (h *hostLB) sync() {
 		}
 		l.mu.Lock()
 		l.backends = b
+		if a := h.pendingAffinity[port]; a != l.affinity {
+			l.affinity, l.sticky = a, nil
+		}
 		l.mu.Unlock()
 	}
 	h.pending = map[int][]podnet.Backend{}
+	h.pendingAffinity = map[int]time.Duration{}
+}
+
+// pick chooses a backend: sticky per client IP with session affinity,
+// round-robin otherwise.
+func (l *lbListener) pick(client string) (podnet.Backend, bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if len(l.backends) == 0 {
+		return podnet.Backend{}, false
+	}
+	now := time.Now()
+	if l.affinity > 0 {
+		if c, ok := l.sticky[client]; ok && now.Sub(c.last) < l.affinity {
+			for _, b := range l.backends {
+				if b.IP.Equal(c.b.IP) && b.Port == c.b.Port {
+					l.sticky[client] = stickyChoice{b, now}
+					return b, true
+				}
+			}
+		}
+	}
+	b := l.backends[l.rr%len(l.backends)]
+	l.rr++
+	if l.affinity > 0 {
+		if l.sticky == nil {
+			l.sticky = map[string]stickyChoice{}
+		}
+		l.sticky[client] = stickyChoice{b, now}
+	}
+	return b, true
 }
 
 func (h *hostLB) serve(l *lbListener) {
@@ -222,14 +266,8 @@ func (h *hostLB) serve(l *lbListener) {
 		if err != nil {
 			return
 		}
-		l.mu.Lock()
-		var b podnet.Backend
-		ok := len(l.backends) > 0
-		if ok {
-			b = l.backends[l.rr%len(l.backends)]
-			l.rr++
-		}
-		l.mu.Unlock()
+		client, _, _ := net.SplitHostPort(c.RemoteAddr().String())
+		b, ok := l.pick(client)
 		if !ok {
 			c.Close()
 			continue

@@ -7,6 +7,7 @@ require (
 	github.com/containers/gvisor-tap-vsock v0.8.7
 	github.com/creack/pty v1.1.18
 	github.com/google/go-containerregistry v0.20.6
+	github.com/miekg/dns v1.1.68
 	github.com/prometheus/client_model v0.6.2
 	github.com/shirou/gopsutil/v4 v4.26.10
 	github.com/spf13/cobra v1.10.2
@@ -117,7 +118,6 @@ require (
 	github.com/lithammer/dedent v1.1.0 // indirect
 	github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
-	github.com/miekg/dns v1.1.68 // indirect
 	github.com/mistifyio/go-zfs v2.1.2-0.20190413222219-f784269be439+incompatible // indirect
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
 	github.com/mitchellh/go-wordwrap v1.0.1 // indirect

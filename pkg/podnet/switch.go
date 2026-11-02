@@ -23,6 +23,8 @@ type fastSwitch struct {
 	ipMAC  map[[4]byte][6]byte // pod IP -> MAC (registered at attach)
 	nat    *natTable
 	ov     *overlay
+	dns    DNSAnswerer // cluster DNS, answered in the switch for UDP
+	dnsVIP [4]byte
 	pol    *policyTable
 }
 
@@ -129,6 +131,10 @@ func (s *fastSwitch) handle(p *swPort, frame []byte) {
 			s.cam[src] = p
 			s.mu.Unlock()
 		}
+	}
+	if p != overlayPort && s.isDNSQuery(frame) {
+		go s.answerDNS(p, append([]byte(nil), frame...))
+		return
 	}
 	if s.nat != nil && dst[0]&1 == 0 {
 		if hit, dmac, viaUp := s.nat.outbound(frame, s.macOf); hit {

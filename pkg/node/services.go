@@ -16,6 +16,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 
+	"github.com/GrowlyX/kvz/pkg/clusterdns"
 	"github.com/GrowlyX/kvz/pkg/podnet"
 )
 
@@ -44,6 +45,13 @@ func runServiceProxy(ctx context.Context, f informers.SharedInformerFactory, pn 
 	}
 	programmed := map[key]bool{}
 	lb := newHostLB(pn)
+	// cluster DNS (CoreDNS equivalent): UDP answered in the switch, TCP via
+	// the netstack listener the VIP's TCP port is NATed to
+	cdns := clusterdns.New()
+	cdns.SetPodCIDRs([]string{"10.88.0.0/13", "10.96.0.0/11"}) // 10.88-10.127: node pod CIDRs
+	if err := pn.ServeClusterDNS(ctx, net.ParseIP(ClusterDNS), cdns); err != nil {
+		klog.ErrorS(err, "cluster DNS")
+	}
 	for {
 		select {
 		case <-ctx.Done():
@@ -60,10 +68,11 @@ func runServiceProxy(ctx context.Context, f informers.SharedInformerFactory, pn 
 		}
 		seen := map[key]bool{}
 		// cluster DNS VIP -> this node's gateway resolver (node-local DNS)
-		for _, proto := range []string{"UDP", "TCP"} {
-			pn.SetService(net.ParseIP(ClusterDNS), 53, proto, []podnet.Backend{{IP: pn.GW, Port: 53}})
-			seen[key{ClusterDNS, 53, proto}] = true
-		}
+		cdns.Sync(svcs, slices)
+		pn.SetService(net.ParseIP(ClusterDNS), 53, "UDP", []podnet.Backend{{IP: pn.GW, Port: 53}}) // fallback only
+		pn.SetService(net.ParseIP(ClusterDNS), 53, "TCP", []podnet.Backend{{IP: pn.GW, Port: podnet.DNSTCPPort}})
+		seen[key{ClusterDNS, 53, "UDP"}] = true
+		seen[key{ClusterDNS, 53, "TCP"}] = true
 		for _, svc := range svcs {
 			eps := bySvc[svc.Namespace+"/"+svc.Name]
 			if svc.Spec.ClusterIP == "" || svc.Spec.ClusterIP == corev1.ClusterIPNone {

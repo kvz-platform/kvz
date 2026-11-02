@@ -216,6 +216,11 @@ func find(s *corev1.PodStatus, name string) *corev1.ContainerStatus {
 			return &s.ContainerStatuses[i]
 		}
 	}
+	for i := range s.EphemeralContainerStatuses {
+		if s.EphemeralContainerStatuses[i].Name == name {
+			return &s.EphemeralContainerStatuses[i]
+		}
+	}
 	for i := range s.InitContainerStatuses {
 		if s.InitContainerStatuses[i].Name == name {
 			return &s.InitContainerStatuses[i]

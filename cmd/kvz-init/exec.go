@@ -88,6 +88,13 @@ func handleExec(conn *os.File) {
 		sendExit(conn, &mu, 0)
 		return
 	}
+	if req.Argv[0] == "__kvz_attach" {
+		if !attachTTY(req.Container, br, stdout) {
+			stderr.Write([]byte("container " + req.Container + " has no console\n"))
+		}
+		sendExit(conn, &mu, 0)
+		return
+	}
 	c, ok := specByName[req.Container]
 	if !ok {
 		for _, v := range specByName {

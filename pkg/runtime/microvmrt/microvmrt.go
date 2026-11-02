@@ -80,6 +80,8 @@ type pod struct {
 	hostListeners map[string]hostListener // hostNetwork: Mac-side listeners
 	ns            string
 	refresh       chan struct{} // re-render configMap/secret/downwardAPI volumes
+	ephMu         sync.Mutex
+	ephemeral     map[string]bool // ephemeral containers already started
 }
 
 func DefaultKernel() string {
@@ -150,6 +152,9 @@ func (b *Backend) UpdatePod(p *corev1.Pod) {
 		if b.kernelCgroups {
 			b.resize(p, ps)
 		}
+		if len(p.Spec.EphemeralContainers) > 0 {
+			b.startEphemerals(p, ps)
+		}
 		ps.nudge() // labels/annotations feed downwardAPI volumes
 	}
 }
@@ -187,6 +192,8 @@ type cspec struct {
 	GID        int         `json:"gid"`
 	ImageTag   string      `json:"image_tag"`
 	Restart    string      `json:"restart"`
+	TTY        bool        `json:"tty,omitempty"`
+	Stdin      bool        `json:"stdin,omitempty"`
 	Cgroup     *cgroupSpec `json:"cgroup,omitempty"`
 	Sidecar    bool        `json:"sidecar,omitempty"`
 	Groups     []int       `json:"groups,omitempty"`
@@ -331,9 +338,11 @@ func (b *Backend) buildSpec(p *corev1.Pod, ps *pod) (*spec, []microvm.Share, err
 		if im == nil {
 			return cspec{}, fmt.Errorf("image %s not resolved", c.Image)
 		}
-		if !seen[im.Tag] {
-			shares = append(shares, microvm.Share{Tag: im.Tag, Path: im.Rootfs, ReadOnly: true})
-			seen[im.Tag] = true
+		// The whole image store is one read-only share, so images pulled after
+		// boot (ephemeral containers) are reachable in the guest too.
+		if !seen[imagesTag] {
+			shares = append(shares, microvm.Share{Tag: imagesTag, Path: b.images.Dir(), ReadOnly: true})
+			seen[imagesTag] = true
 		}
 		// $(VAR) references in command/args expand against the container's
 		// env, as in the kubelet (image Entrypoint/Cmd are left alone).
@@ -383,7 +392,7 @@ func (b *Backend) buildSpec(p *corev1.Pod, ps *pod) (*spec, []microvm.Share, err
 		if termPath == "" {
 			termPath = "/dev/termination-log"
 		}
-		cs := cspec{Name: c.Name, Argv: argv, Env: env, Cwd: cwd, UID: uid, GID: gid, ImageTag: im.Tag, Restart: restart, Cgroup: cgroupFor(c.Resources),
+		cs := cspec{Name: c.Name, Argv: argv, Env: env, Cwd: cwd, UID: uid, GID: gid, ImageTag: b.imageLower(im), Restart: restart, Cgroup: cgroupFor(c.Resources),
 			Groups: groups, ReadOnly: c.SecurityContext != nil && c.SecurityContext.ReadOnlyRootFilesystem != nil && *c.SecurityContext.ReadOnlyRootFilesystem,
 			TermPath: termPath, TermLogs: c.TerminationMessagePolicy == corev1.TerminationMessageFallbackToLogsOnError,
 			Readiness: convProbe(c, c.ReadinessProbe), Liveness: convProbe(c, c.LivenessProbe), Startup: convProbe(c, c.StartupProbe)}
@@ -821,9 +830,14 @@ func (b *Backend) run(ctx context.Context, p *corev1.Pod, ps *pod) error {
 					reason = e.Reason // OOMKilled
 				}
 				_, isInit, sidecar := lookupContainer(p, e.Container)
+				cur := p
+				if lp := ps.latest.Load(); lp != nil {
+					cur = lp
+				}
+				eph := isEphemeral(cur, e.Container)
 				b.t.Update(p.Namespace, p.Name, func(s *corev1.PodStatus) {
 					switch {
-					case ps.stopping.Load():
+					case ps.stopping.Load() || eph: // ephemeral containers never restart
 						rt.SetTerminated(s, e.Container, code, reason)
 						rt.SetTerminationMessage(s, e.Container, e.Msg)
 					case sidecar:
@@ -1052,4 +1066,15 @@ func (b *Backend) dnsFor(p *corev1.Pod) (servers, searches, options []string) {
 		return out
 	}
 	return dedup(servers, 3), dedup(searches, 32), options
+}
+
+const imagesTag = "images"
+
+// imageLower is an image's rootfs path inside the guest's /v share.
+func (b *Backend) imageLower(im *image.Image) string {
+	rel, err := filepath.Rel(b.images.Dir(), im.Rootfs)
+	if err != nil {
+		return im.Tag
+	}
+	return imagesTag + "/" + filepath.ToSlash(rel)
 }

@@ -122,6 +122,14 @@ func runServiceProxy(ctx context.Context, f informers.SharedInformerFactory, pn 
 				k := key{svc.Spec.ClusterIP, sp.Port, proto}
 				seen[k] = true
 				pn.SetService(vip, uint16(sp.Port), proto, backends)
+				var affinity time.Duration
+				if svc.Spec.SessionAffinity == corev1.ServiceAffinityClientIP {
+					affinity = 3 * time.Hour
+					if c := svc.Spec.SessionAffinityConfig; c != nil && c.ClientIP != nil && c.ClientIP.TimeoutSeconds != nil {
+						affinity = time.Duration(*c.ClientIP.TimeoutSeconds) * time.Second
+					}
+				}
+				pn.SetAffinity(vip, uint16(sp.Port), proto, affinity)
 				programmed[k] = true
 				if proto == "TCP" {
 					switch svc.Spec.Type {

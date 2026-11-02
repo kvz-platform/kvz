@@ -19,6 +19,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/containers/gvisor-tap-vsock/pkg/types"
 	"github.com/containers/gvisor-tap-vsock/pkg/virtualnetwork"
@@ -271,6 +272,18 @@ func (n *Net) SetService(vip net.IP, port uint16, proto string, backends []Backe
 		p = 17
 	}
 	n.nat.SetService(vip, port, p, backends)
+}
+
+// SetAffinity sets ClientIP session affinity for vip:port (0 disables).
+func (n *Net) SetAffinity(vip net.IP, port uint16, proto string, timeout time.Duration) {
+	if n.nat == nil {
+		return
+	}
+	p := uint8(6)
+	if proto == "UDP" {
+		p = 17
+	}
+	n.nat.SetAffinity(vip, port, p, timeout)
 }
 
 // AddDNS publishes name (relative to zone) -> ip on the gateway DNS server.

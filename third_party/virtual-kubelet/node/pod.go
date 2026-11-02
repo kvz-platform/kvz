@@ -255,6 +255,13 @@ func (pc *PodController) updatePodStatus(ctx context.Context, podFromKubernetes 
 	// the pod status, and we should be the sole writers of the pod status, we can blind overwrite it. Therefore
 	// we need to copy the pod and set ResourceVersion to 0.
 	podFromProvider.ResourceVersion = "0"
+	// kvz patch: pods/status also persists labels, annotations and finalizers,
+	// so a provider copy with stale metadata reverted users' changes. Send
+	// the API server's current metadata with the provider's status.
+	podFromProvider.Labels = podFromKubernetes.Labels
+	podFromProvider.Annotations = podFromKubernetes.Annotations
+	podFromProvider.Finalizers = podFromKubernetes.Finalizers
+	podFromProvider.OwnerReferences = podFromKubernetes.OwnerReferences
 	if _, err := pc.client.Pods(podFromKubernetes.Namespace).UpdateStatus(ctx, podFromProvider, metav1.UpdateOptions{}); err != nil && !errors.IsNotFound(err) {
 		span.SetStatus(err)
 		return pkgerrors.Wrap(err, "error while updating pod status in kubernetes")

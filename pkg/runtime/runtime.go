@@ -87,6 +87,21 @@ func (t *Tracker) List() []*corev1.Pod {
 	return out
 }
 
+// UpdateMeta adopts a newer pod object's metadata and spec, keeping the
+// provider-owned status.
+func (t *Tracker) UpdateMeta(pod *corev1.Pod) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	p, ok := t.pods[Key(pod.Namespace, pod.Name)]
+	if !ok {
+		return
+	}
+	st := p.Status
+	np := pod.DeepCopy()
+	np.Status = st
+	t.pods[Key(pod.Namespace, pod.Name)] = np
+}
+
 // Update mutates the stored pod's status and notifies virtual-kubelet.
 func (t *Tracker) Update(ns, name string, f func(*corev1.PodStatus)) {
 	t.mu.Lock()

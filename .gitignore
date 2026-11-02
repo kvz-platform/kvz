@@ -3,3 +3,4 @@ results/raw/*.log
 *.test
 pkg/runtime/microvmrt/kvz-init
 dist/
+/kvz

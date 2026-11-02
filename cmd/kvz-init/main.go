@@ -60,18 +60,19 @@ type Container struct {
 }
 
 type Spec struct {
-	Search     []string    `json:"search"`
-	MTU        int         `json:"mtu"`
-	IP         string      `json:"ip"`
-	Mask       int         `json:"mask"`
-	GW         string      `json:"gw"`
-	Hostname   string      `json:"hostname"`
-	DNS        []string    `json:"dns"`
-	Hosts      string      `json:"hosts"`
-	Containers []Container `json:"containers"`
-	Inits      []Container `json:"init_containers,omitempty"`
-	Restart    string      `json:"restart"` // pod restartPolicy
-	Mounts     []Mount     `json:"mounts"`
+	Search     []string          `json:"search"`
+	MTU        int               `json:"mtu"`
+	IP         string            `json:"ip"`
+	Mask       int               `json:"mask"`
+	GW         string            `json:"gw"`
+	Hostname   string            `json:"hostname"`
+	DNS        []string          `json:"dns"`
+	Hosts      string            `json:"hosts"`
+	Containers []Container       `json:"containers"`
+	Inits      []Container       `json:"init_containers,omitempty"`
+	Restart    string            `json:"restart"` // pod restartPolicy
+	Mounts     []Mount           `json:"mounts"`
+	Sysctls    map[string]string `json:"sysctls,omitempty"`
 }
 
 type Mount struct {
@@ -80,6 +81,8 @@ type Mount struct {
 	Sub       string `json:"sub"` // path inside the kvz share when Tag == ""
 	Path      string `json:"path"`
 	ReadOnly  bool   `json:"ro"`
+	Tmpfs     string `json:"tmpfs,omitempty"`
+	TmpfsSize int64  `json:"tmpfs_size,omitempty"`
 }
 
 type Event struct {
@@ -240,12 +243,29 @@ func main() {
 			if m.ReadOnly {
 				flags |= unix.MS_RDONLY
 			}
-			if m.Tag != "" {
-				must(mount("/v/"+m.Tag, dst, "", unix.MS_BIND|flags, ""), "volume "+m.Path)
-			} else {
+			switch {
+			case m.Tmpfs != "":
+				base := "/tmpfs/" + m.Tmpfs
+				if _, err := os.Stat(base); err != nil {
+					_ = os.MkdirAll(base, 0o777)
+					opts := "mode=0777"
+					if m.TmpfsSize > 0 {
+						opts += fmt.Sprintf(",size=%d", m.TmpfsSize)
+					}
+					must(mount("tmpfs", base, "tmpfs", unix.MS_NOSUID|unix.MS_NODEV, opts), "tmpfs "+m.Tmpfs)
+				}
+				src := secureJoin(base, m.Sub)
+				_ = os.MkdirAll(src, 0o777)
+				must(mount(src, dst, "", unix.MS_BIND, ""), "volume "+m.Path)
+			case m.Tag != "":
+				must(mount("/v/"+m.Tag, dst, "", unix.MS_BIND, ""), "volume "+m.Path)
+			default:
 				src := filepath.Join("/kvz", m.Sub)
 				_ = os.MkdirAll(src, 0o777)
 				must(mount(src, dst, "", unix.MS_BIND, ""), "volume "+m.Path)
+			}
+			if flags&unix.MS_RDONLY != 0 { // a bind mount only becomes read-only on remount
+				_ = unix.Mount("", dst, "", unix.MS_REMOUNT|unix.MS_BIND|unix.MS_RDONLY, "")
 			}
 		}
 	}
@@ -256,6 +276,12 @@ func main() {
 		}
 	}
 	must(<-netDone, "network")
+	for k, v := range spec.Sysctls {
+		p := "/proc/sys/" + strings.ReplaceAll(k, ".", "/")
+		if err := os.WriteFile(p, []byte(v), 0o644); err != nil {
+			emit(Event{Type: "error", Msg: fmt.Sprintf("sysctl %s=%s: %v", k, v, err)})
+		}
+	}
 	conn := <-connc
 	if conn != nil {
 		evOut = conn
@@ -617,9 +643,13 @@ func terminationMessage(name string, code int) string {
 		}
 		var out strings.Builder
 		for _, l := range lines {
-			// strip "<ts> <stream> <tag> "
+			// "<ts> <stream> <tag> <msg>": F lines end in a newline, P (partial) don't
 			if f := strings.SplitN(l, " ", 4); len(f) == 4 {
-				l = f[3]
+				out.WriteString(f[3])
+				if f[2] == "F" {
+					out.WriteString("\n")
+				}
+				continue
 			}
 			out.WriteString(l + "\n")
 		}

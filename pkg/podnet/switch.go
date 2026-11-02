@@ -67,7 +67,9 @@ func (s *fastSwitch) add(fd int, uplink bool, ip [4]byte, mac [6]byte) *swPort {
 func (s *fastSwitch) remove(p *swPort) {
 	s.mu.Lock()
 	delete(s.ports, p)
-	if !p.uplink {
+	// Only drop mappings this port still owns: the IP may already belong to a
+	// new pod that attached before this one finished tearing down.
+	if mac, ok := s.ipMAC[p.ip]; ok && !p.uplink && s.cam[mac] == p {
 		delete(s.ipMAC, p.ip)
 	}
 	for mac, q := range s.cam {

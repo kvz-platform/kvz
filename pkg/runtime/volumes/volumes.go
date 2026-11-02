@@ -19,6 +19,10 @@ import (
 	corev1listers "k8s.io/client-go/listers/core/v1"
 )
 
+// TmpfsPrefix marks a memory-backed emptyDir in mount specs:
+// "<prefix><volume>/<sizeBytes>[/<subpath>]".
+const TmpfsPrefix = "@tmpfs/"
+
 type Materializer struct {
 	ConfigMaps corev1listers.ConfigMapLister
 	Secrets    corev1listers.SecretLister
@@ -32,10 +36,19 @@ func (m *Materializer) Materialize(pod *corev1.Pod, podDir string) (map[string][
 	for _, v := range pod.Spec.Volumes {
 		dst := filepath.Join(podDir, "volumes", v.Name)
 		switch {
+		case v.EmptyDir != nil && v.EmptyDir.Medium == corev1.StorageMediumMemory:
+			// tmpfs inside the pod VM (shared by its containers)
+			var size int64
+			if v.EmptyDir.SizeLimit != nil {
+				size = v.EmptyDir.SizeLimit.Value()
+			}
+			paths[v.Name] = fmt.Sprintf("%s%s/%d", TmpfsPrefix, v.Name, size)
+			continue
 		case v.EmptyDir != nil:
 			if err := os.MkdirAll(dst, 0o777); err != nil {
 				return nil, err
 			}
+			_ = os.Chmod(dst, 0o777) // like the kubelet (umask would leave 0755)
 		case v.HostPath != nil:
 			dst = v.HostPath.Path
 			if t := v.HostPath.Type; t != nil && (*t == corev1.HostPathDirectoryOrCreate) {
@@ -60,6 +73,14 @@ func (m *Materializer) Materialize(pod *corev1.Pod, podDir string) (map[string][
 		}
 		paths[v.Name] = dst
 	}
+	// configMap, secret, downwardAPI and projected volumes are always mounted
+	// read-only by the kubelet.
+	apiVol := map[string]bool{}
+	for _, v := range pod.Spec.Volumes {
+		if v.ConfigMap != nil || v.Secret != nil || v.DownwardAPI != nil || v.Projected != nil {
+			apiVol[v.Name] = true
+		}
+	}
 	out := map[string][]string{}
 	for _, c := range append(append([]corev1.Container{}, pod.Spec.InitContainers...), pod.Spec.Containers...) {
 		for _, vm := range c.VolumeMounts {
@@ -67,6 +88,7 @@ func (m *Materializer) Materialize(pod *corev1.Pod, podDir string) (map[string][
 			if !ok {
 				continue
 			}
+			tmpfs := strings.HasPrefix(p, TmpfsPrefix)
 			sub := vm.SubPath
 			if vm.SubPathExpr != "" {
 				sub = expandEnv(vm.SubPathExpr, c.Env)
@@ -81,12 +103,12 @@ func (m *Materializer) Materialize(pod *corev1.Pod, podDir string) (map[string][
 					}
 				}
 				p = filepath.Join(p, sub)
-				if _, err := os.Lstat(p); os.IsNotExist(err) {
+				if _, err := os.Lstat(p); os.IsNotExist(err) && !tmpfs {
 					_ = os.MkdirAll(p, 0o777) // the kubelet creates missing subpaths as directories
 				}
 			}
 			spec := p + ":" + vm.MountPath
-			if vm.ReadOnly {
+			if vm.ReadOnly || apiVol[vm.Name] {
 				spec += ":ro"
 			}
 			out[c.Name] = append(out[c.Name], spec)

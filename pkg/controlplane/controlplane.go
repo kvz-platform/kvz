@@ -10,6 +10,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"github.com/GrowlyX/kvz/pkg/egress"
+	"go.etcd.io/etcd/client/pkg/v3/transport"
 	"net"
 	"net/http"
 	"net/url"
@@ -47,10 +48,25 @@ type Config struct {
 	DisableCM        bool
 	DisableSched     bool
 	EtcdUnsafeNoSync bool // benchmark knob: skip fsync in etcd
+	// HA (embedded etcd cluster): PeerIP enables mTLS etcd peers on the node
+	// IP; InitialCluster is set when joining an existing cluster.
+	EtcdName       string
+	PeerIP         string
+	InitialCluster string
+	LeaderElect    bool
 	// SecretsEncryption encrypts Secrets at rest in etcd (aescbc, k3s-style).
 	SecretsEncryption bool
 	// Extra component flags ("name=value"), appended last so they override.
 	ExtraAPIArgs, ExtraCMArgs, ExtraSchedArgs []string
+}
+
+// leaderElect: single servers skip leader election (no lease to wait for on
+// restart); HA servers elect one active controller-manager/scheduler.
+func leaderElect(on bool) string {
+	if on {
+		return "--leader-elect=true"
+	}
+	return "--leader-elect=false"
 }
 
 func extraArgs(in []string) []string {
@@ -133,6 +149,11 @@ func Prepare(cfg Config) (*ControlPlane, error) {
 	if _, _, err := pki.ServiceAccountKey(tlsDir); err != nil {
 		return nil, err
 	}
+	if cfg.PeerIP != "" {
+		if _, _, err := ca.Issue("etcd-peer", "etcd-peer", nil, []string{"localhost"}, []net.IP{net.ParseIP(cfg.PeerIP), net.ParseIP("127.0.0.1")}, true); err != nil {
+			return nil, err
+		}
+	}
 	server := fmt.Sprintf("https://127.0.0.1:%d", cfg.APIPort)
 	cp := &ControlPlane{Cfg: cfg, CA: ca, Server: server}
 	for _, u := range []struct{ name, cn, org string }{
@@ -170,13 +191,26 @@ func (cp *ControlPlane) NodeKubeconfig(nodeName, server, out string) error {
 func (cp *ControlPlane) startEtcd(ctx context.Context) (*embed.Etcd, error) {
 	c := embed.NewConfig()
 	c.Dir = filepath.Join(cp.Cfg.DataDir, "etcd")
-	c.Name = "kvz"
+	c.Name = cp.Cfg.EtcdName
+	if c.Name == "" {
+		c.Name = "kvz"
+	}
 	c.LogLevel = "error"
 	cu, _ := url.Parse(fmt.Sprintf("http://127.0.0.1:%d", cp.Cfg.EtcdPort))
-	pu, _ := url.Parse(fmt.Sprintf("http://127.0.0.1:%d", cp.Cfg.EtcdPort+1))
+	pu, _ := url.Parse(cp.PeerURL())
 	c.ListenClientUrls, c.AdvertiseClientUrls = []url.URL{*cu}, []url.URL{*cu}
 	c.ListenPeerUrls, c.AdvertisePeerUrls = []url.URL{*pu}, []url.URL{*pu}
 	c.InitialCluster = c.InitialClusterFromName(c.Name)
+	if cp.Cfg.PeerIP != "" {
+		tlsDir := filepath.Join(cp.Cfg.DataDir, "tls")
+		c.PeerTLSInfo = transport.TLSInfo{CertFile: filepath.Join(tlsDir, "etcd-peer.crt"), KeyFile: filepath.Join(tlsDir, "etcd-peer.key"),
+			TrustedCAFile: filepath.Join(tlsDir, "ca.crt"), ClientCertAuth: true}
+		c.PeerAutoTLS = false
+	}
+	if cp.Cfg.InitialCluster != "" {
+		c.InitialCluster = cp.Cfg.InitialCluster
+		c.ClusterState = embed.ClusterStateFlagExisting
+	}
 	c.UnsafeNoFsync = cp.Cfg.EtcdUnsafeNoSync
 	c.QuotaBackendBytes = 8 << 30
 	c.AutoCompactionMode = "periodic"
@@ -192,6 +226,9 @@ func (cp *ControlPlane) startEtcd(ctx context.Context) (*embed.Etcd, error) {
 		return nil, fmt.Errorf("etcd did not become ready")
 	case <-ctx.Done():
 		return nil, ctx.Err()
+	}
+	if cp.Cfg.PeerIP != "" {
+		go cp.haLoop(ctx, uint64(e.Server.MemberID()))
 	}
 	return e, nil
 }
@@ -294,7 +331,7 @@ func (cp *ControlPlane) Run(ctx context.Context, ready chan<- struct{}) error {
 			"--cluster-signing-cert-file=" + p("ca.crt"),
 			"--cluster-signing-key-file=" + p("ca.key"),
 			"--use-service-account-credentials=true",
-			"--leader-elect=false",
+			leaderElect(cp.Cfg.LeaderElect),
 			"--bind-address=127.0.0.1",
 			"--secure-port=0",
 			"--cluster-cidr=" + cp.Cfg.ClusterCIDR,
@@ -302,6 +339,7 @@ func (cp *ControlPlane) Run(ctx context.Context, ready chan<- struct{}) error {
 			"--controllers=*,-nodeipam,-route,-service,-cloud-node-lifecycle,-attachdetach,-persistentvolume-expander",
 			"--kube-api-qps=200", "--kube-api-burst=400",
 			"--concurrent-deployment-syncs=10", "--concurrent-replicaset-syncs=10",
+			"--leader-elect-lease-duration=8s", "--leader-elect-renew-deadline=6s", "--leader-elect-retry-period=1s",
 			"--profiling=false",
 		}, extraArgs(cp.Cfg.ExtraCMArgs)...))
 		go func() { errc <- fmt.Errorf("kube-controller-manager exited: %w", cm.ExecuteContext(ctx)) }()
@@ -311,7 +349,8 @@ func (cp *ControlPlane) Run(ctx context.Context, ready chan<- struct{}) error {
 			"--kubeconfig=" + filepath.Join(cred, "scheduler.kubeconfig"),
 			"--authentication-kubeconfig=" + filepath.Join(cred, "scheduler.kubeconfig"),
 			"--authorization-kubeconfig=" + filepath.Join(cred, "scheduler.kubeconfig"),
-			"--leader-elect=false",
+			leaderElect(cp.Cfg.LeaderElect),
+			"--leader-elect-lease-duration=8s", "--leader-elect-renew-deadline=6s", "--leader-elect-retry-period=1s",
 			"--bind-address=127.0.0.1",
 			"--secure-port=0",
 			"--profiling=false",

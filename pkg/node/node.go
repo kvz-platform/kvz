@@ -127,6 +127,7 @@ func (p *Provider) PreparePodNetwork(pod *corev1.Pod) {
 // UpdatePod forwards spec/metadata updates (env re-resolved by the pod
 // controller) to backends that react to them.
 func (p *Provider) UpdatePod(ctx context.Context, pod *corev1.Pod) error {
+	p.t.UpdateMeta(pod)
 	b, err := p.backendFor(pod)
 	if err != nil {
 		return nil

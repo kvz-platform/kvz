@@ -40,9 +40,22 @@ type ctEntry struct {
 	last  int64
 }
 
+type affKey struct {
+	svc    svcKey
+	client [4]byte
+}
+
+type affEntry struct {
+	b    Backend
+	last int64
+}
+
 type natTable struct {
 	mu    sync.RWMutex
 	svcs  map[svcKey][]Backend
+	// sessionAffinity: ClientIP (timeout per service, sticky choices)
+	affTimeout map[svcKey]int64 // nanoseconds
+	aff        map[affKey]*affEntry
 	fwd   map[ctKey]*ctEntry // client -> service (key: original tuple)
 	rev   map[ctKey]*ctEntry // backend -> client (key: reply tuple as seen from backend)
 	cidr  *net.IPNet
@@ -51,7 +64,8 @@ type natTable struct {
 
 func newNATTable(serviceCIDR string, gwMAC net.HardwareAddr) *natTable {
 	_, c, _ := net.ParseCIDR(serviceCIDR)
-	t := &natTable{svcs: map[svcKey][]Backend{}, fwd: map[ctKey]*ctEntry{}, rev: map[ctKey]*ctEntry{}, cidr: c}
+	t := &natTable{svcs: map[svcKey][]Backend{}, fwd: map[ctKey]*ctEntry{}, rev: map[ctKey]*ctEntry{}, cidr: c,
+		affTimeout: map[svcKey]int64{}, aff: map[affKey]*affEntry{}}
 	copy(t.gwMAC[:], gwMAC)
 	go t.gc()
 	return t
@@ -69,6 +83,49 @@ func (t *natTable) SetService(vip net.IP, port uint16, proto uint8, backends []B
 		t.svcs[k] = backends
 	}
 	t.mu.Unlock()
+}
+
+// SetAffinity enables ClientIP session affinity with the given timeout (0 disables).
+func (t *natTable) SetAffinity(vip net.IP, port uint16, proto uint8, timeout time.Duration) {
+	k := svcKey{ip4(vip), port, proto}
+	t.mu.Lock()
+	if timeout <= 0 {
+		delete(t.affTimeout, k)
+		for ak := range t.aff {
+			if ak.svc == k {
+				delete(t.aff, ak)
+			}
+		}
+	} else {
+		t.affTimeout[k] = int64(timeout)
+	}
+	t.mu.Unlock()
+}
+
+// pickBackend chooses a backend for a new flow: sticky per client IP when the
+// service has session affinity, otherwise spread by client IP and port.
+func (t *natTable) pickBackend(sk svcKey, backends []Backend, sip [4]byte, sport uint16) Backend {
+	now := time.Now().UnixNano()
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if to, ok := t.affTimeout[sk]; ok {
+		ak := affKey{sk, sip}
+		if e, ok := t.aff[ak]; ok && now-e.last < to {
+			for _, b := range backends {
+				if b.Port == e.b.Port && b.IP.Equal(e.b.IP) {
+					e.last = now
+					return b
+				}
+			}
+		}
+		b := backends[int(now/1000)%len(backends)]
+		t.aff[ak] = &affEntry{b: b, last: now}
+		return b
+	}
+	h := fnv.New32a()
+	h.Write(sip[:])
+	h.Write([]byte{byte(sport >> 8), byte(sport)})
+	return backends[int(h.Sum32())%len(backends)]
 }
 
 func (t *natTable) gc() {
@@ -198,10 +255,7 @@ func (t *natTable) outbound(frame []byte, macOf func([4]byte) ([6]byte, bool)) (
 		if len(backends) == 0 {
 			return false, [6]byte{}, false
 		}
-		h := fnv.New32a()
-		h.Write(k.sip[:])
-		h.Write([]byte{byte(k.sport >> 8), byte(k.sport)})
-		b := backends[int(h.Sum32())%len(backends)]
+		b := t.pickBackend(svcKey{k.dip, k.dport, proto}, backends, k.sip, k.sport)
 		e = &ctEntry{vip: k.dip, vport: k.dport, bip: ip4(b.IP), bport: b.Port}
 		if mac, ok := macOf(e.bip); ok {
 			e.bmac = mac

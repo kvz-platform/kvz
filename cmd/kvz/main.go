@@ -7,12 +7,15 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/GrowlyX/kvz/pkg/lb"
 	"net"
 	"net/http"
 	_ "net/http/pprof"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -135,7 +138,8 @@ func serverCmd() *cobra.Command {
 	var restorePath string
 	var snapInterval time.Duration
 	var snapRetention int
-	var secretsEnc bool
+	var secretsEnc, clusterInit bool
+	var joinServer, joinToken string
 	var apiExtra, cmExtra, schedExtra []string
 	var sans []string
 	home, _ := os.UserHomeDir()
@@ -149,11 +153,21 @@ func serverCmd() *cobra.Command {
 			if os.Getenv("KVZ_ETCD_SYNC") == "" {
 				os.Setenv("KVZ_ETCD_SYNC", etcdSync)
 			}
+			serverDir := filepath.Join(nf.dataDir, "server")
+			ha, etcdName, initialCluster, err := haSetup(serverDir, nf, clusterInit, joinServer, joinToken, etcdPort)
+			if err != nil {
+				return err
+			}
+			peerIP := ""
+			if ha {
+				peerIP = nf.nodeIP
+			}
 			cp, err := controlplane.Prepare(controlplane.Config{
-				DataDir: filepath.Join(nf.dataDir, "server"), BindAddress: "0.0.0.0", AdvertiseIP: net.ParseIP(nf.nodeIP),
+				DataDir: serverDir, BindAddress: "0.0.0.0", AdvertiseIP: net.ParseIP(nf.nodeIP),
 				ExtraSANs: append(sans, nf.name), APIPort: apiPort, EtcdPort: etcdPort,
 				ServiceCIDR: "10.43.0.0/16", ClusterCIDR: "10.42.0.0/16", EtcdUnsafeNoSync: noSync,
 				SecretsEncryption: secretsEnc, ExtraAPIArgs: apiExtra, ExtraCMArgs: cmExtra, ExtraSchedArgs: schedExtra,
+				EtcdName: etcdName, PeerIP: peerIP, InitialCluster: initialCluster, LeaderElect: ha,
 			})
 			if err != nil {
 				return err
@@ -245,11 +259,22 @@ func serverCmd() *cobra.Command {
 					}
 				}
 			}
-			cidrs := join.NewCIDRAllocator(filepath.Join(nf.dataDir, "server", "podcidrs.json"))
-			localCIDR := cidrs.For(nf.name)
+			adm, err := adminClient(cp.AdminKubeconfig)
+			if err != nil {
+				return err
+			}
+			cidrs := join.NewCIDRAllocator(adm, filepath.Join(serverDir, "podcidrs.json"))
+			localCIDR, err := cidrs.For(nf.name)
+			if err != nil {
+				return fmt.Errorf("pod CIDR: %w", err)
+			}
+			var sj join.ServerJoiner
+			if ha {
+				sj = cp
+			}
 			go func() {
 				errc <- join.Serve(fmt.Sprintf(":%d", apiPort+1), secret, cp.CA,
-					filepath.Join(cp.CA.Dir, "apiserver.crt"), filepath.Join(cp.CA.Dir, "apiserver.key"), cidrs)
+					filepath.Join(cp.CA.Dir, "apiserver.crt"), filepath.Join(cp.CA.Dir, "apiserver.key"), cidrs, sj)
 			}()
 			fmt.Fprintf(os.Stderr, "\nkvz server ready in %s\n  export KUBECONFIG=%s\n  join: kvz agent --server https://%s:%d --token %s\n\n",
 				time.Since(t0).Round(time.Millisecond), ext, nf.nodeIP, apiPort, token)
@@ -281,6 +306,9 @@ func serverCmd() *cobra.Command {
 	nf.add(c, filepath.Join(home, ".kvz"))
 	c.Flags().IntVar(&apiPort, "https-listen-port", 6443, "apiserver port (join endpoint uses port+1)")
 	c.Flags().BoolVar(&secretsEnc, "secrets-encryption", false, "encrypt Secrets at rest (aescbc)")
+	c.Flags().BoolVar(&clusterInit, "cluster-init", false, "start an HA-capable cluster (etcd peers on the node IP, mTLS) that more servers can join")
+	c.Flags().StringVar(&joinServer, "server", "", "join an existing HA cluster as another server (URL of any server, e.g. https://10.0.0.1:6443)")
+	c.Flags().StringVar(&joinToken, "token", "", "join token of the cluster to join (with --server)")
 	c.Flags().StringArrayVar(&apiExtra, "kube-apiserver-arg", nil, "extra kube-apiserver flag (name=value), repeatable")
 	c.Flags().StringArrayVar(&cmExtra, "kube-controller-manager-arg", nil, "extra kube-controller-manager flag (name=value), repeatable")
 	c.Flags().StringArrayVar(&schedExtra, "kube-scheduler-arg", nil, "extra kube-scheduler flag (name=value), repeatable")
@@ -325,9 +353,17 @@ func agentCmd() *cobra.Command {
 					return err
 				}
 			}
-			kc := filepath.Join(dir, "kubeconfig")
-			if err := pki.WriteKubeconfig(kc, u, ca, crt, key, "node"); err != nil {
+			// client-side apiserver load balancer: fails over across servers
+			apiLB, err := lb.Start(ctx, net.JoinHostPort(host, port), filepath.Join(dir, "servers.json"))
+			if err != nil {
 				return err
+			}
+			kc := filepath.Join(dir, "kubeconfig")
+			if err := pki.WriteKubeconfig(kc, apiLB.URL(), ca, crt, key, "node"); err != nil {
+				return err
+			}
+			if lcs, err := adminClient(kc); err == nil {
+				go apiLB.Watch(ctx, lcs)
 			}
 			return node.Run(ctx, node.Options{Name: nf.name, Kubeconfig: kc, DataDir: dir, NodeIP: nf.nodeIP,
 				ListenPort: nf.kubeletPort, ServingCert: crt, ServingKey: key, ClientCA: ca,
@@ -398,4 +434,65 @@ func bootstrap(ctx context.Context, kubeconfig string) error {
 		return err
 	}
 	return node.EnsureRuntimeClasses(ctx, cs)
+}
+
+// haSetup decides the server's etcd identity. HA mode (--cluster-init or
+// --server) is remembered in the data dir. Joining fetches the cluster PKI and
+// an etcd initial-cluster value from an existing server (first start only).
+func haSetup(serverDir string, nf nodeFlags, clusterInit bool, joinServer, joinToken string, etcdPort int) (ha bool, etcdName, initialCluster string, err error) {
+	marker := filepath.Join(serverDir, "ha")
+	_, statErr := os.Stat(marker)
+	ha = clusterInit || joinServer != "" || statErr == nil
+	etcdName = "kvz"
+	if b, err := os.ReadFile(filepath.Join(serverDir, "etcd-name")); err == nil {
+		etcdName = strings.TrimSpace(string(b))
+	} else if joinServer != "" {
+		etcdName = nf.name
+	}
+	if _, err := os.Stat(filepath.Join(serverDir, "etcd", "member")); err != nil && joinServer != "" {
+		if joinToken == "" {
+			return false, "", "", fmt.Errorf("--server needs --token")
+		}
+		u, err := url.Parse(joinServer)
+		if err != nil || u.Host == "" {
+			return false, "", "", fmt.Errorf("bad --server URL %q", joinServer)
+		}
+		host, port, err := net.SplitHostPort(u.Host)
+		if err != nil {
+			host, port = u.Host, "6443"
+		}
+		p, _ := strconv.Atoi(port)
+		peerURL := fmt.Sprintf("https://%s:%d", nf.nodeIP, etcdPort+1)
+		var sb *join.ServerBundle
+		for attempt := 0; ; attempt++ {
+			sb, err = join.FetchServer(fmt.Sprintf("https://%s:%d", host, p+1), joinToken, join.ServerJoinRequest{Name: etcdName, IP: nf.nodeIP, PeerURL: peerURL})
+			if err == nil || attempt >= 10 {
+				break
+			}
+			klog.InfoS("server join failed, retrying", "err", err)
+			time.Sleep(3 * time.Second)
+		}
+		if err != nil {
+			return false, "", "", fmt.Errorf("join %s: %w", joinServer, err)
+		}
+		for rel, b := range sb.Files {
+			dst := filepath.Join(serverDir, filepath.Clean("/" + rel)[1:])
+			if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
+				return false, "", "", err
+			}
+			if err := os.WriteFile(dst, b, 0o600); err != nil {
+				return false, "", "", err
+			}
+		}
+		initialCluster = sb.InitialCluster
+		klog.InfoS("joined HA cluster", "server", joinServer, "etcdInitialCluster", initialCluster)
+	}
+	if ha {
+		if err := os.MkdirAll(serverDir, 0o700); err != nil {
+			return false, "", "", err
+		}
+		_ = os.WriteFile(marker, nil, 0o600)
+		_ = os.WriteFile(filepath.Join(serverDir, "etcd-name"), []byte(etcdName+"\n"), 0o600)
+	}
+	return ha, etcdName, initialCluster, nil
 }

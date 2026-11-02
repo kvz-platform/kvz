@@ -9,7 +9,6 @@ package microvmrt
 
 import (
 	"context"
-	crand "crypto/rand"
 	_ "embed"
 	"encoding/json"
 	"fmt"
@@ -199,21 +198,24 @@ type mspec struct {
 	Sub       string `json:"sub"`
 	Path      string `json:"path"`
 	ReadOnly  bool   `json:"ro"`
+	Tmpfs     string `json:"tmpfs,omitempty"` // memory-backed emptyDir name
+	TmpfsSize int64  `json:"tmpfs_size,omitempty"`
 }
 
 type spec struct {
-	Search     []string `json:"search"`
-	MTU        int      `json:"mtu"`
-	IP         string   `json:"ip"`
-	Mask       int      `json:"mask"`
-	GW         string   `json:"gw"`
-	Hostname   string   `json:"hostname"`
-	DNS        []string `json:"dns"`
-	Hosts      string   `json:"hosts"`
-	Containers []cspec  `json:"containers"`
-	Inits      []cspec  `json:"init_containers,omitempty"`
-	Restart    string   `json:"restart"`
-	Mounts     []mspec  `json:"mounts"`
+	Sysctls    map[string]string `json:"sysctls,omitempty"`
+	Search     []string          `json:"search"`
+	MTU        int               `json:"mtu"`
+	IP         string            `json:"ip"`
+	Mask       int               `json:"mask"`
+	GW         string            `json:"gw"`
+	Hostname   string            `json:"hostname"`
+	DNS        []string          `json:"dns"`
+	Hosts      string            `json:"hosts"`
+	Containers []cspec           `json:"containers"`
+	Inits      []cspec           `json:"init_containers,omitempty"`
+	Restart    string            `json:"restart"`
+	Mounts     []mspec           `json:"mounts"`
 }
 
 // PrepareIP reserves the pod's IP early so status.podIP env refs resolve.
@@ -282,6 +284,13 @@ func (b *Backend) Start(ctx context.Context, p *corev1.Pod) error {
 func (b *Backend) buildSpec(p *corev1.Pod, ps *pod) (*spec, []microvm.Share, error) {
 	sp := &spec{Hostname: p.Name, DNS: b.dns,
 		Search: []string{p.Namespace + ".svc.cluster.local", "svc.cluster.local", "cluster.local"}, IP: ps.ip.String(), Mask: b.pnet.Bits(), GW: b.pnet.GW.String(), MTU: b.pnet.MTU}
+	if psc := p.Spec.SecurityContext; psc != nil && len(psc.Sysctls) > 0 {
+		// every pod has its own kernel, so all sysctls are pod-scoped here
+		sp.Sysctls = map[string]string{}
+		for _, sc := range psc.Sysctls {
+			sp.Sysctls[sc.Name] = sc.Value
+		}
+	}
 	if p.Spec.Hostname != "" {
 		sp.Hostname = p.Spec.Hostname
 	}
@@ -401,6 +410,16 @@ func (b *Backend) buildSpec(p *corev1.Pod, ps *pod) (*spec, []microvm.Share, err
 			parts := strings.Split(m, ":")
 			host, guest := parts[0], parts[1]
 			ro := len(parts) > 2 && parts[2] == "ro"
+			if t, ok := strings.CutPrefix(host, volumes.TmpfsPrefix); ok {
+				f := strings.SplitN(t, "/", 3) // volume, size, subpath
+				size, _ := strconv.ParseInt(f[1], 10, 64)
+				ms := mspec{Container: cname, Tmpfs: f[0], TmpfsSize: size, Path: guest, ReadOnly: ro}
+				if len(f) > 2 {
+					ms.Sub = f[2]
+				}
+				sp.Mounts = append(sp.Mounts, ms)
+				continue
+			}
 			if rel, err := filepath.Rel(ps.dir, host); err == nil && !strings.HasPrefix(rel, "..") {
 				sp.Mounts = append(sp.Mounts, mspec{Container: cname, Sub: rel, Path: guest, ReadOnly: ro})
 			} else {
@@ -604,7 +623,7 @@ func (b *Backend) run(ctx context.Context, p *corev1.Pod, ps *pod) error {
 	if err := os.WriteFile(filepath.Join(ps.dir, "spec.json"), raw, 0o644); err != nil {
 		return err
 	}
-	mac := randomMAC()
+	mac := macFor(ps.ip)
 	nic, err := b.pnet.AttachPod(ctx, ps.ip, mac)
 	if err != nil {
 		return err
@@ -827,11 +846,13 @@ func (b *Backend) PortForward(ctx context.Context, p *corev1.Pod, port int32, st
 	return nil
 }
 
-func randomMAC() net.HardwareAddr {
-	m := make([]byte, 6)
-	_, _ = crand.Read(m)
-	m[0] = (m[0] | 0x02) & 0xfe // locally administered, unicast
-	return net.HardwareAddr(m)
+// macFor derives a pod's MAC from its IP (02:6b:<ip>). Pod IPs are reused
+// constantly; with random MACs the long-lived gateway netstack kept stale ARP
+// entries for a reused IP, so host->pod connections (port-forward, egress
+// proxy, LoadBalancer) went to a MAC that no longer existed.
+func macFor(ip net.IP) net.HardwareAddr {
+	ip4 := ip.To4()
+	return net.HardwareAddr{0x02, 0x6b, ip4[0], ip4[1], ip4[2], ip4[3]}
 }
 
 func lookupContainer(p *corev1.Pod, name string) (c *corev1.Container, isInit, sidecar bool) {

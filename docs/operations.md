@@ -41,7 +41,7 @@
 | Path | Contents |
 |---|---|
 | `~/.kvz/kubeconfig.yaml` | Admin kubeconfig for the cluster |
-| `~/.kvz/kernel/Image` | The pod kernel built by `kernel/build.sh` |
+| `~/.kvz/kernel/Image` | The pod kernel built by `kernel/build.sh`. If it's missing, kvz uses the one Homebrew installs (`$(brew --prefix)/share/kvz/kernel/Image`). Set `KVZ_KERNEL` to use another. |
 | `~/.kvz/server/manifests/` | YAML here is applied automatically, like k3s |
 | `~/.kvz/server/db/snapshots/` | etcd snapshots |
 | `~/.kvz/logs/` | Logs from the launchd service |

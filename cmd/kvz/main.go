@@ -28,6 +28,7 @@ import (
 
 	"github.com/GrowlyX/kvz/pkg/controlplane"
 	"github.com/GrowlyX/kvz/pkg/join"
+	"github.com/GrowlyX/kvz/pkg/version"
 	kubectlcmd "k8s.io/kubectl/pkg/cmd"
 
 	"github.com/GrowlyX/kvz/pkg/deploy"
@@ -66,7 +67,7 @@ func kubectlCmd() *cobra.Command {
 }
 
 func versionCmd() *cobra.Command {
-	return &cobra.Command{Use: "version", Run: func(*cobra.Command, []string) { fmt.Println("kvz", node.Version) }}
+	return &cobra.Command{Use: "version", Short: "Print the kvz and Kubernetes versions", Run: func(*cobra.Command, []string) { fmt.Println(version.String()) }}
 }
 
 func signalCtx() (context.Context, context.CancelFunc) {

@@ -83,6 +83,16 @@ func DefaultKernel() string {
 	if p := filepath.Join(home, ".kvz", "kernel", "Image"); exists(p) {
 		return p
 	}
+	// Packaged installs (Homebrew) ship the kernel at <prefix>/share/kvz/kernel/Image
+	// next to <prefix>/bin/kvz.
+	if exe, err := os.Executable(); err == nil {
+		if real, err := filepath.EvalSymlinks(exe); err == nil {
+			exe = real
+		}
+		if p := filepath.Join(filepath.Dir(exe), "..", "share", "kvz", "kernel", "Image"); exists(p) {
+			return filepath.Clean(p)
+		}
+	}
 	return filepath.Join(home, "Library", "Application Support", "com.apple.container", "kernels", "default.kernel-arm64")
 }
 

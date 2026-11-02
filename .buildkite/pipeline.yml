@@ -1,0 +1,110 @@
+# kvz CI and releases. See docs/releasing.md for agent setup and secrets.
+#
+# Every step runs on Apple Silicon Macs (queue "macos"): kvz is darwin-only and
+# its tests boot real VMs with Virtualization.framework, which cloud CI can't
+# nest. Branch and PR builds run checks and end-to-end tests. Builds of a
+# release tag (v1.35.6-12) build, sign, notarize, publish and update Homebrew.
+
+agents:
+  queue: macos
+
+env:
+  CGO_ENABLED: "1"
+
+steps:
+  # ---------------------------------------------------------------- checks
+  - label: ":go: Lint"
+    key: lint
+    if: build.tag == null
+    command: make lint
+
+  - label: ":test_tube: Unit tests"
+    key: test
+    if: build.tag == null
+    command: make test
+
+  - label: ":hammer: Build"
+    key: build
+    if: build.tag == null
+    command:
+      - make build
+      - bin/kvz version
+    artifact_paths: bin/kvz
+
+  - label: ":kubernetes: End-to-end"
+    key: e2e
+    if: build.tag == null
+    depends_on: build
+    # one kvz cluster per Mac at a time: the tests boot VMs and bind ports
+    concurrency: 1
+    concurrency_group: kvz/e2e/$BUILDKITE_AGENT_NAME
+    timeout_in_minutes: 40
+    command:
+      - buildkite-agent artifact download bin/kvz .
+      - chmod +x bin/kvz
+      - KVZ_BIN=$PWD/bin/kvz go test -tags e2e -count=1 -timeout 30m -v ./test/e2e
+    retry:
+      automatic:
+        - exit_status: -1 # agent lost
+          limit: 1
+
+  # ---------------------------------------------------------------- cut a release
+  - block: ":rocket: Release"
+    key: release-gate
+    if: build.branch == "main" && build.tag == null
+    depends_on: [lint, test, e2e]
+    prompt: "Tag the next release (v<kubernetes>-<n>) from this commit?"
+
+  - label: ":label: Tag release"
+    if: build.branch == "main" && build.tag == null
+    depends_on: release-gate
+    command:
+      - export GITHUB_TOKEN="$(buildkite-agent secret get GITHUB_TOKEN)"
+      - git config user.name "kvz release bot"
+      - git config user.email "release-bot@users.noreply.github.com"
+      - git remote set-url origin "https://x-access-token:$${GITHUB_TOKEN}@github.com/kvz-platform/kvz.git"
+      - hack/release/tag.sh
+
+  # ---------------------------------------------------------------- release (tag builds)
+  - label: ":linux: Pod kernel"
+    key: kernel
+    if: build.tag =~ /^v[0-9]+\.[0-9]+\.[0-9]+-[0-9]+$$/
+    command:
+      - OUT=$PWD/dist/kernel kernel/build.sh
+    artifact_paths: dist/kernel/Image
+
+  - label: ":apple: Build, sign and notarize"
+    key: release-build
+    if: build.tag =~ /^v[0-9]+\.[0-9]+\.[0-9]+-[0-9]+$$/
+    command:
+      - make build KVZ_VERSION=$BUILDKITE_TAG
+      - export APPLE_SIGNING_IDENTITY="$(buildkite-agent secret get APPLE_SIGNING_IDENTITY)"
+      - export APPLE_API_KEY_ID="$(buildkite-agent secret get APPLE_API_KEY_ID)"
+      - export APPLE_API_ISSUER="$(buildkite-agent secret get APPLE_API_ISSUER)"
+      - export APPLE_API_KEY_PATH="$(mktemp -d)/key.p8"
+      - buildkite-agent secret get APPLE_API_KEY > "$APPLE_API_KEY_PATH"
+      - hack/release/sign.sh bin/kvz
+      - rm -f "$APPLE_API_KEY_PATH"
+      - bin/kvz version | grep -q "$BUILDKITE_TAG"
+    artifact_paths: bin/kvz
+
+  - label: ":package: Package and publish"
+    key: publish
+    if: build.tag =~ /^v[0-9]+\.[0-9]+\.[0-9]+-[0-9]+$$/
+    depends_on: [kernel, release-build]
+    command:
+      - buildkite-agent artifact download "bin/kvz" .
+      - buildkite-agent artifact download "dist/kernel/Image" .
+      - chmod +x bin/kvz
+      - KVZ_KERNEL_IMAGE=dist/kernel/Image hack/release/package.sh $BUILDKITE_TAG
+      - export GITHUB_TOKEN="$(buildkite-agent secret get GITHUB_TOKEN)"
+      - hack/release/publish.sh $BUILDKITE_TAG
+    artifact_paths: "dist/*.tar.gz;dist/*.sha256"
+
+  - label: ":beer: Update Homebrew tap"
+    if: build.tag =~ /^v[0-9]+\.[0-9]+\.[0-9]+-[0-9]+$$/
+    depends_on: publish
+    command:
+      - buildkite-agent artifact download "dist/*" .
+      - export HOMEBREW_TAP_TOKEN="$(buildkite-agent secret get HOMEBREW_TAP_TOKEN)"
+      - hack/release/update-tap.sh $BUILDKITE_TAG

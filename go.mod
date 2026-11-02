@@ -8,7 +8,7 @@ require (
 	github.com/creack/pty v1.1.18
 	github.com/google/go-containerregistry v0.20.6
 	github.com/prometheus/client_model v0.6.2
-	github.com/shirou/gopsutil/v4 v4.25.10
+	github.com/shirou/gopsutil/v4 v4.26.10
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
 	github.com/virtual-kubelet/virtual-kubelet v1.12.0

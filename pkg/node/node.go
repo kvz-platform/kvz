@@ -8,6 +8,7 @@ import (
 	"crypto/x509"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"runtime"
@@ -55,6 +56,9 @@ type Options struct {
 	MaxPods        int
 	Backends       []string // subset of linux, darwin, macos
 	Workers        int
+	PodCIDR        string // this node's pod CIDR (cluster-allocated)
+	OverlaySecret  []byte // authenticates cross-node pod network links
+	OverlayPort    int
 }
 
 // Provider multiplexes backends.
@@ -312,7 +316,10 @@ func Run(ctx context.Context, o Options) error {
 	t := rt.NewTracker()
 	vols := &volumes.Materializer{ConfigMaps: pc.ConfigMaps, Secrets: pc.Secrets, Client: cs}
 	p := &Provider{t: t, backends: map[string]rt.Backend{}, def: o.DefaultHandler, hostIP: o.NodeIP}
-	cidr := os.Getenv("KVZ_POD_CIDR")
+	cidr := o.PodCIDR
+	if cidr == "" {
+		cidr = os.Getenv("KVZ_POD_CIDR")
+	}
 	if cidr == "" {
 		cidr = "10.88.0.0/16"
 	}
@@ -374,6 +381,24 @@ func Run(ctx context.Context, o Options) error {
 		GetPods: p.GetPods, GetStatsSummary: p.GetStatsSummary, GetMetricsResource: p.GetMetricsResource, PortForward: p.PortForward,
 		GetPodsFromKubernetes: func(context.Context) ([]*corev1.Pod, error) { return pc.Pods.List(k8slabels.Everything()) },
 	}, false))
+	overlayEP := ""
+	if len(o.OverlaySecret) > 0 {
+		if o.OverlayPort == 0 {
+			o.OverlayPort = 6446
+		}
+		if err := pn.EnableOverlay(o.Name, fmt.Sprintf(":%d", o.OverlayPort), o.OverlaySecret); err != nil {
+			klog.ErrorS(err, "pod network overlay disabled")
+		} else {
+			overlayEP = net.JoinHostPort(o.NodeIP, strconv.Itoa(o.OverlayPort))
+			if ep := os.Getenv("KVZ_OVERLAY_ENDPOINT"); ep != "" {
+				overlayEP = ep
+			}
+			go runRoutes(ctx, informers.NewSharedInformerFactory(cs, 10*time.Minute), pn)
+		}
+	}
+	spec.Spec.PodCIDR = cidr
+	spec.Spec.PodCIDRs = []string{cidr}
+	spec.Annotations = map[string]string{"kvz.dev/pod-cidr": cidr, "kvz.dev/overlay-endpoint": overlayEP}
 	go runServiceProxy(ctx, informers.NewSharedInformerFactory(cs, 10*time.Minute), pn)
 	klog.InfoS("starting kvz node", "name", o.Name, "ip", o.NodeIP, "backends", o.Backends)
 	return runVK(ctx, vkConfig{name: o.Name, client: cs, spec: spec, provider: p, listenAddr: fmt.Sprintf(":%d", o.ListenPort),

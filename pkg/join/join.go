@@ -31,9 +31,10 @@ type Request struct {
 }
 
 type Bundle struct {
-	CA   []byte `json:"ca"`
-	Cert []byte `json:"cert"`
-	Key  []byte `json:"key"`
+	PodCIDR string `json:"podCIDR"`
+	CA      []byte `json:"ca"`
+	Cert    []byte `json:"cert"`
+	Key     []byte `json:"key"`
 }
 
 func caHash(caPEM []byte) string {
@@ -62,7 +63,7 @@ func LoadOrCreateToken(dataDir string, ca *pki.CA) (token, secret string, err er
 }
 
 // Serve runs the join endpoint.
-func Serve(addr, secret string, ca *pki.CA, servingCert, servingKey string) error {
+func Serve(addr, secret string, ca *pki.CA, servingCert, servingKey string, cidrs *CIDRAllocator) error {
 	caPEM, err := os.ReadFile(filepath.Join(ca.Dir, "ca.crt"))
 	if err != nil {
 		return err
@@ -91,7 +92,7 @@ func Serve(addr, secret string, ca *pki.CA, servingCert, servingKey string) erro
 		}
 		cb, _ := os.ReadFile(crt)
 		kb, _ := os.ReadFile(key)
-		_ = json.NewEncoder(w).Encode(Bundle{CA: caPEM, Cert: cb, Key: kb})
+		_ = json.NewEncoder(w).Encode(Bundle{CA: caPEM, Cert: cb, Key: kb, PodCIDR: cidrs.For(req.Name)})
 	})
 	srv := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 	return srv.ListenAndServeTLS(servingCert, servingKey)

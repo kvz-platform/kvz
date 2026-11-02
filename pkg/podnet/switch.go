@@ -19,6 +19,7 @@ type fastSwitch struct {
 	uplink *swPort
 	ipMAC  map[[4]byte][6]byte // pod IP -> MAC (registered at attach)
 	nat    *natTable
+	ov     *overlay
 }
 
 type swPort struct {
@@ -72,7 +73,6 @@ func (s *fastSwitch) remove(p *swPort) {
 
 func (s *fastSwitch) rx(p *swPort) {
 	buf := make([]byte, frameMax)
-	var src, dst [6]byte
 	for {
 		n, err := unix.Read(p.fd, buf)
 		if err != nil {
@@ -89,8 +89,19 @@ func (s *fastSwitch) rx(p *swPort) {
 		if n < 14 {
 			continue
 		}
-		copy(dst[:], buf[0:6])
-		copy(src[:], buf[6:12])
+		s.handle(p, buf[:n])
+	}
+}
+
+// overlayPort is the pseudo ingress port for packets arriving from peers.
+var overlayPort = &swPort{fd: -1}
+
+// handle switches one frame from port p (frame may be modified in place).
+func (s *fastSwitch) handle(p *swPort, frame []byte) {
+	var src, dst [6]byte
+	copy(dst[:], frame[0:6])
+	copy(src[:], frame[6:12])
+	if p != overlayPort {
 		// learn (fast path: already known)
 		s.mu.RLock()
 		known := s.cam[src]
@@ -100,46 +111,91 @@ func (s *fastSwitch) rx(p *swPort) {
 			s.cam[src] = p
 			s.mu.Unlock()
 		}
-		frame := buf[:n]
-		if s.nat != nil && dst[0]&1 == 0 {
-			if hit, dmac, viaUp := s.nat.outbound(frame, s.macOf); hit {
-				copy(frame[0:6], dmac[:])
-				var q *swPort
-				s.mu.RLock()
-				if viaUp {
-					q = s.uplink
-				} else {
-					q = s.cam[dmac]
-					if q == nil {
-						q = s.uplink
-					}
-				}
-				s.mu.RUnlock()
-				if q != nil && q != p {
-					send(q.fd, frame)
-				} else if q == p {
-					send(p.fd, frame) // hairpin: pod reaching its own service
-				}
-				continue
+	}
+	if s.nat != nil && dst[0]&1 == 0 {
+		if hit, dmac, viaUp := s.nat.outbound(frame, s.macOf); hit {
+			if s.routeRemote(frame) {
+				return
 			}
-		}
-		if dst[0]&1 == 1 { // broadcast / multicast: flood
-			s.flood(p, frame)
-			continue
-		}
-		s.mu.RLock()
-		q := s.cam[dst]
-		up := s.uplink
-		s.mu.RUnlock()
-		switch {
-		case q != nil && q != p:
-			send(q.fd, frame)
-		case q == nil && !p.uplink && up != nil:
-			send(up.fd, frame) // gateway / not yet learned: let the netstack handle it
-		case q == nil && p.uplink:
-			s.flood(p, frame)
+			copy(frame[0:6], dmac[:])
+			var q *swPort
+			s.mu.RLock()
+			if viaUp {
+				q = s.uplink
+			} else {
+				q = s.cam[dmac]
+				if q == nil {
+					q = s.uplink
+				}
+			}
+			s.mu.RUnlock()
+			if q != nil && q.fd >= 0 {
+				send(q.fd, frame) // includes hairpin (q == p)
+			}
+			return
 		}
 	}
+	if dst[0]&1 == 1 { // broadcast / multicast: flood
+		if p != overlayPort {
+			s.flood(p, frame)
+		}
+		return
+	}
+	if p != overlayPort && s.routeRemote(frame) {
+		return
+	}
+	s.mu.RLock()
+	q := s.cam[dst]
+	up := s.uplink
+	s.mu.RUnlock()
+	switch {
+	case q != nil && q != p && q.fd >= 0:
+		send(q.fd, frame)
+	case q == nil && !p.uplink && up != nil:
+		send(up.fd, frame) // gateway / not yet learned: let the netstack handle it
+	case q == nil && p.uplink:
+		s.flood(p, frame)
+	}
+}
+
+// routeRemote sends IPv4 frames destined to another node's pod CIDR over the
+// overlay (Ethernet header stripped). Reports whether it took the frame.
+func (s *fastSwitch) routeRemote(frame []byte) bool {
+	if s.ov == nil || len(frame) < ethHdr+20 || frame[12] != 0x08 || frame[13] != 0x00 {
+		return false
+	}
+	var dip [4]byte
+	copy(dip[:], frame[ethHdr+16:ethHdr+20])
+	pc, remote := s.ov.lookup(dip)
+	if !remote {
+		return false
+	}
+	if pc != nil {
+		pc.send(frame[ethHdr:])
+	}
+	return true // remote but no link yet: drop (TCP retransmits)
+}
+
+// deliverInbound turns an IPv4 packet from a peer into a frame for the
+// destination pod and switches it (reverse service NAT applies).
+func (s *fastSwitch) deliverInbound(pkt []byte) {
+	if len(pkt) < 20 {
+		return
+	}
+	var dip [4]byte
+	copy(dip[:], pkt[16:20])
+	frame := make([]byte, ethHdr+len(pkt))
+	mac, ok := s.macOf(dip)
+	if !ok {
+		// not a local pod: could be a reverse-NAT reply for a service VIP client
+		// on this node; frame it to the gateway MAC and let handle() decide.
+		mac = s.nat.gwMAC
+	}
+	copy(frame[0:6], mac[:])
+	copy(frame[6:12], s.nat.gwMAC[:])
+	frame[12], frame[13] = 0x08, 0x00
+	copy(frame[ethHdr:], pkt)
+	s.handle(overlayPort, frame)
 }
 
 func (s *fastSwitch) flood(from *swPort, frame []byte) {
@@ -152,7 +208,9 @@ func (s *fastSwitch) flood(from *swPort, frame []byte) {
 	}
 	s.mu.RUnlock()
 	for _, q := range targets {
-		send(q.fd, frame)
+		if q.fd >= 0 {
+			send(q.fd, frame)
+		}
 	}
 }
 

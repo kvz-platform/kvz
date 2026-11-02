@@ -161,9 +161,11 @@ func serverCmd() *cobra.Command {
 				}
 				go storage.Run(ctx, adm, nf.name)
 			}
+			cidrs := join.NewCIDRAllocator(filepath.Join(nf.dataDir, "server", "podcidrs.json"))
+			localCIDR := cidrs.For(nf.name)
 			go func() {
 				errc <- join.Serve(fmt.Sprintf(":%d", apiPort+1), secret, cp.CA,
-					filepath.Join(cp.CA.Dir, "apiserver.crt"), filepath.Join(cp.CA.Dir, "apiserver.key"))
+					filepath.Join(cp.CA.Dir, "apiserver.crt"), filepath.Join(cp.CA.Dir, "apiserver.key"), cidrs)
 			}()
 			fmt.Fprintf(os.Stderr, "\nkvz server ready in %s\n  export KUBECONFIG=%s\n  join: kvz agent --server https://%s:%d --token %s\n\n",
 				time.Since(t0).Round(time.Millisecond), ext, nf.nodeIP, apiPort, token)
@@ -180,7 +182,8 @@ func serverCmd() *cobra.Command {
 				go func() {
 					errc <- node.Run(ctx, node.Options{Name: nf.name, Kubeconfig: kc, DataDir: filepath.Join(nf.dataDir, "agent"),
 						NodeIP: nf.nodeIP, ListenPort: nf.kubeletPort, ServingCert: crt, ServingKey: key,
-						ClientCA: filepath.Join(cp.CA.Dir, "ca.crt"), DefaultHandler: nf.defRuntime, MaxPods: nf.maxPods, Backends: nf.backends})
+						ClientCA: filepath.Join(cp.CA.Dir, "ca.crt"), DefaultHandler: nf.defRuntime, MaxPods: nf.maxPods, Backends: nf.backends,
+						PodCIDR: localCIDR, OverlaySecret: join.OverlaySecret(token)})
 				}()
 			}
 			select {
@@ -236,7 +239,8 @@ func agentCmd() *cobra.Command {
 			}
 			return node.Run(ctx, node.Options{Name: nf.name, Kubeconfig: kc, DataDir: dir, NodeIP: nf.nodeIP,
 				ListenPort: nf.kubeletPort, ServingCert: crt, ServingKey: key, ClientCA: ca,
-				DefaultHandler: nf.defRuntime, MaxPods: nf.maxPods, Backends: nf.backends})
+				DefaultHandler: nf.defRuntime, MaxPods: nf.maxPods, Backends: nf.backends,
+				PodCIDR: b.PodCIDR, OverlaySecret: join.OverlaySecret(token)})
 		},
 	}
 	nf.add(c, filepath.Join(home, ".kvz"))
@@ -269,6 +273,7 @@ func bootstrap(ctx context.Context, kubeconfig string) error {
 	cr := &rbacv1.ClusterRole{ObjectMeta: metav1.ObjectMeta{Name: "kvz:node"}, Rules: []rbacv1.PolicyRule{
 		{APIGroups: []string{""}, Resources: []string{"secrets", "configmaps", "services", "pods"}, Verbs: []string{"get", "list", "watch"}},
 		{APIGroups: []string{"discovery.k8s.io"}, Resources: []string{"endpointslices"}, Verbs: []string{"get", "list", "watch"}},
+		{APIGroups: []string{""}, Resources: []string{"nodes"}, Verbs: []string{"get", "list", "watch"}},
 	}}
 	if _, err := cs.RbacV1().ClusterRoles().Create(ctx, cr, metav1.CreateOptions{}); apierrors.IsAlreadyExists(err) {
 		_, err = cs.RbacV1().ClusterRoles().Update(ctx, cr, metav1.UpdateOptions{})

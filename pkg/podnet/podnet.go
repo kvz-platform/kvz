@@ -79,7 +79,7 @@ func New(cidr string, mtu int) (*Net, error) {
 	}
 	// Static pod IPs come from the top half; the built-in DHCP server (used by
 	// macOS guests) assigns from the bottom up.
-	n := &Net{vn: vn, Subnet: sn, GW: gw, MTU: mtu, used: map[uint32]bool{}, lo: base + size/2, hi: base + size - 2}
+	n := &Net{vn: vn, Subnet: sn, GW: gw, MTU: mtu, used: map[uint32]bool{}, lo: base + size/2 + 2, hi: base + size - 2}
 	n.next = n.lo
 	if os.Getenv("KVZ_PODNET_SWITCH") != "gvisor" {
 		// kvz fast switch in front; the netstack hangs off an uplink port.
@@ -258,4 +258,22 @@ func (n *Net) AddDNS(zone, name string, ip net.IP) {
 	body, _ := json.Marshal(types.Zone{Name: zone, Records: []types.Record{{Name: name, IP: ip}}})
 	req := httptest.NewRequest("POST", "/services/dns/add", bytes.NewReader(body))
 	n.vn.ServicesMux().ServeHTTP(httptest.NewRecorder(), req)
+}
+
+// EnableOverlay starts the cross-node link listener. secret authenticates peers.
+func (n *Net) EnableOverlay(node, listenAddr string, secret []byte) error {
+	if n.sw == nil {
+		return fmt.Errorf("overlay requires the kvz switch")
+	}
+	o := &overlay{node: node, secret: secret, peers: map[string]*peerConn{}, want: map[string]string{}}
+	o.deliver = n.sw.deliverInbound
+	n.sw.ov = o
+	return o.listen(listenAddr)
+}
+
+// SetRoutes programs remote pod CIDRs (cidr -> node) and peer endpoints (node -> host:port).
+func (n *Net) SetRoutes(routes, endpoints map[string]string) {
+	if n.sw != nil && n.sw.ov != nil {
+		n.sw.ov.set(routes, endpoints)
+	}
 }

@@ -101,6 +101,20 @@ func (t *Tracker) UpdateMeta(pod *corev1.Pod) {
 	np := pod.DeepCopy()
 	np.Status = st
 	t.pods[Key(pod.Namespace, pod.Name)] = np
+	if np.Generation != p.Generation && t.notify != nil {
+		observe(np)
+		cp := np.DeepCopy()
+		go t.notify(cp) // report the new observedGeneration
+	}
+}
+
+// observe stamps the generation the status reflects (kubelet behavior since
+// PodObservedGenerationTracking).
+func observe(p *corev1.Pod) {
+	p.Status.ObservedGeneration = p.Generation
+	for i := range p.Status.Conditions {
+		p.Status.Conditions[i].ObservedGeneration = p.Generation
+	}
 }
 
 // Update mutates the stored pod's status and notifies virtual-kubelet.
@@ -112,6 +126,7 @@ func (t *Tracker) Update(ns, name string, f func(*corev1.PodStatus)) {
 		return
 	}
 	f(&p.Status)
+	observe(p)
 	cp := p.DeepCopy()
 	n := t.notify
 	t.mu.Unlock()

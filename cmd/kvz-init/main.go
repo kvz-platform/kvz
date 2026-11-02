@@ -127,7 +127,17 @@ func must(err error, what string) {
 }
 
 func mount(src, dst, fstype string, flags uintptr, data string) error {
-	_ = os.MkdirAll(dst, 0o755)
+	// bind-mounting a file (subPath to a file) needs a file mountpoint
+	if st, err := os.Stat(src); err == nil && !st.IsDir() && flags&unix.MS_BIND != 0 {
+		_ = os.MkdirAll(filepath.Dir(dst), 0o755)
+		if _, err := os.Lstat(dst); os.IsNotExist(err) {
+			if f, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY, 0o644); err == nil {
+				f.Close()
+			}
+		}
+	} else {
+		_ = os.MkdirAll(dst, 0o755)
+	}
 	return unix.Mount(src, dst, fstype, flags, data)
 }
 

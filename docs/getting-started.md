@@ -15,7 +15,7 @@ of pods. It takes a few minutes.
 brew install kvz-platform/tap/kvz
 ```
 
-This installs a signed and notarized `kvz` and the small Linux kernel that pods
+This installs a signed `kvz` and the small Linux kernel that pods
 boot (8.5 MB). Update later with `brew upgrade kvz`.
 
 ## 2. Or build from source

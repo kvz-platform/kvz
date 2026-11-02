@@ -8,7 +8,8 @@
 #                 can't nest), build the kernel with Apple container, and hold
 #                 the Developer ID signing keychain.
 # Branch and PR builds run checks and end-to-end tests. Builds of a release tag
-# (v1.35.6-12) build, sign, notarize, publish and update Homebrew.
+# (v1.35.6-12) build, sign, publish and update Homebrew (notarization is off
+# for now; see KVZ_NOTARIZE).
 
 agents:
   queue: macos
@@ -87,18 +88,24 @@ steps:
       - OUT=$PWD/dist/kernel kernel/build.sh
     artifact_paths: dist/kernel/Image
 
-  - label: ":apple: Build, sign and notarize"
+  - label: ":apple: Build and sign"
     key: release-build
     if: build.tag =~ /^v[0-9]+\.[0-9]+\.[0-9]+-[0-9]+$$/
+    env:
+      # Notarization is off until the Apple Developer account can notarize.
+      # Set to "1" (and add the APPLE_API_* secrets) to turn it on.
+      KVZ_NOTARIZE: "0"
     command:
       - make build KVZ_VERSION=$BUILDKITE_TAG
-      - export APPLE_SIGNING_IDENTITY="$(buildkite-agent secret get APPLE_SIGNING_IDENTITY)"
-      - export APPLE_API_KEY_ID="$(buildkite-agent secret get APPLE_API_KEY_ID)"
-      - export APPLE_API_ISSUER="$(buildkite-agent secret get APPLE_API_ISSUER)"
-      - export APPLE_API_KEY_PATH="$(mktemp -d)/key.p8"
-      - buildkite-agent secret get APPLE_API_KEY > "$APPLE_API_KEY_PATH"
+      - export APPLE_SIGNING_IDENTITY="$(buildkite-agent secret get APPLE_SIGNING_IDENTITY 2>/dev/null || true)"
+      - |
+        if [ "$$KVZ_NOTARIZE" = 1 ]; then
+          export APPLE_API_KEY_ID="$(buildkite-agent secret get APPLE_API_KEY_ID)"
+          export APPLE_API_ISSUER="$(buildkite-agent secret get APPLE_API_ISSUER)"
+          export APPLE_API_KEY_PATH="$(mktemp -d)/key.p8"
+          buildkite-agent secret get APPLE_API_KEY > "$$APPLE_API_KEY_PATH"
+        fi
       - hack/release/sign.sh bin/kvz
-      - rm -f "$APPLE_API_KEY_PATH"
       - bin/kvz version | grep -q "$BUILDKITE_TAG"
     artifact_paths: bin/kvz
 

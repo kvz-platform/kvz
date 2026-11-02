@@ -36,7 +36,7 @@ and kvz never publishes a bare `v1.35.6`, so this doesn't come up in practice.
    1. builds the pod kernel (`kernel/build.sh`),
    2. builds `kvz` with the version stamped in,
    3. signs it with the Developer ID certificate (hardened runtime plus the
-      virtualization entitlement) and notarizes it with Apple,
+      virtualization entitlement). Notarization is off for now; see below.
    4. packages `kvz-<version>-darwin-arm64.tar.gz` (the binary and the kernel),
    5. creates the GitHub release, with notes generated from Conventional Commit
       subjects (`hack/release/notes.sh`),
@@ -115,8 +115,8 @@ The steps read them with `buildkite-agent secret get`.
 |---|---|---|
 | `GITHUB_TOKEN` | pushing the release tag, creating the GitHub release | fine-grained token for `kvz-platform/kvz` with contents: read and write |
 | `HOMEBREW_TAP_TOKEN` | updating the formula | fine-grained token for `kvz-platform/homebrew-tap` with contents: read and write |
-| `APPLE_SIGNING_IDENTITY` | code signing | the certificate name, such as `Developer ID Application: Example Inc (TEAMID1234)` |
-| `APPLE_API_KEY` | notarization | contents of an App Store Connect API key (`.p8`) with the Developer role |
+| `APPLE_SIGNING_IDENTITY` | code signing (optional: without it, releases are ad-hoc signed) | the certificate name, such as `Developer ID Application: Example Inc (TEAMID1234)` |
+| `APPLE_API_KEY` | notarization, once it's turned on | contents of an App Store Connect API key (`.p8`) with the Developer role |
 | `APPLE_API_KEY_ID` | notarization | that key's ID |
 | `APPLE_API_ISSUER` | notarization | your App Store Connect issuer ID |
 
@@ -131,6 +131,18 @@ security import developer-id.p12 -k ~/Library/Keychains/login.keychain-db -T /us
 Only the release steps (tag builds and the **Tag release** step on `main`) read
 secrets. Pull request builds never do.
 
+### Notarization
+
+Notarization is **off** until the Apple Developer account can notarize. To turn
+it on:
+
+1. Add the three `APPLE_API_*` secrets.
+2. Set `KVZ_NOTARIZE: "1"` on the **Build and sign** step in
+   `.buildkite/pipeline.yml`.
+
+Until then, releases are signed but not notarized. That's fine for Homebrew:
+formula downloads aren't quarantined, so Gatekeeper doesn't block them.
+
 ## Homebrew tap
 
 [kvz-platform/homebrew-tap](https://github.com/kvz-platform/homebrew-tap) holds
@@ -138,7 +150,7 @@ secrets. Pull request builds never do.
 [`packaging/homebrew/kvz.rb.tmpl`](../packaging/homebrew/kvz.rb.tmpl), so
 change the template in this repo, not the formula in the tap.
 
-The formula installs a prebuilt, signed and notarized binary, plus the pod
+The formula installs a prebuilt, signed binary, plus the pod
 kernel at `share/kvz/kernel/Image`. kvz finds the kernel there on its own.
 Release assets must be publicly downloadable for `brew install` to work, which
 means the `kvz` repository has to be public.

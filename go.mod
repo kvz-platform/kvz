@@ -18,7 +18,7 @@ require (
 	go.etcd.io/etcd/server/v3 v3.6.5
 	go.uber.org/zap v1.27.0
 	golang.org/x/crypto v0.46.0
-	golang.org/x/sys v0.48.0
+	golang.org/x/sys v0.49.0
 	golang.org/x/time v0.14.0
 	k8s.io/api v0.35.6
 	k8s.io/apimachinery v0.35.6
@@ -31,6 +31,7 @@ require (
 	k8s.io/kubernetes v1.35.6
 	k8s.io/metrics v0.35.6
 	k8s.io/utils v0.0.0-20251002143259-bc988d571ff4
+	sigs.k8s.io/yaml v1.6.0
 )
 
 require (
@@ -222,7 +223,6 @@ require (
 	sigs.k8s.io/kustomize/kyaml v0.20.1 // indirect
 	sigs.k8s.io/randfill v1.0.0 // indirect
 	sigs.k8s.io/structured-merge-diff/v6 v6.3.2-0.20260122202528-d9cc6641c482 // indirect
-	sigs.k8s.io/yaml v1.6.0 // indirect
 )
 
 replace github.com/Code-Hex/vz/v3 => ./third_party/vz

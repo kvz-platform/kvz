@@ -1,7 +1,10 @@
 package podnet
 
 import (
+	"runtime"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
@@ -102,6 +105,12 @@ func (s *fastSwitch) rx(p *swPort) {
 	}
 }
 
+// droppedFrames counts frames dropped because a receiver stayed full.
+var droppedFrames atomic.Uint64
+
+// DroppedFrames reports frames dropped on full pod NIC queues.
+func DroppedFrames() uint64 { return droppedFrames.Load() }
+
 // overlayPort is the pseudo ingress port for packets arriving from peers.
 var overlayPort = &swPort{fd: -1}
 
@@ -142,7 +151,7 @@ func (s *fastSwitch) handle(p *swPort, frame []byte) {
 			}
 			s.mu.RUnlock()
 			if q != nil && q.fd >= 0 {
-				send(q.fd, frame) // includes hairpin (q == p)
+				sendFrom(p, q.fd, frame) // includes hairpin (q == p)
 			}
 			return
 		}
@@ -165,7 +174,7 @@ func (s *fastSwitch) handle(p *swPort, frame []byte) {
 	s.mu.RUnlock()
 	switch {
 	case q != nil && q != p && q.fd >= 0:
-		send(q.fd, frame)
+		sendFrom(p, q.fd, frame)
 	case q == nil && !p.uplink && up != nil:
 		send(up.fd, frame) // gateway / not yet learned: let the netstack handle it
 	case q == nil && p.uplink:
@@ -224,7 +233,7 @@ func (s *fastSwitch) flood(from *swPort, frame []byte) {
 	s.mu.RUnlock()
 	for _, q := range targets {
 		if q.fd >= 0 {
-			send(q.fd, frame)
+			sendShared(q.fd, frame) // one wedged port must not block a broadcast
 		}
 	}
 }
@@ -239,4 +248,39 @@ func send(fd int, frame []byte) {
 		}
 		return
 	}
+}
+
+// sendShared writes a frame on behalf of a goroutine that serves many pods
+// (the uplink/netstack, overlay peers, floods). A pod whose NIC stopped
+// draining (wedged or stopping VM) must not stall everyone else: retry a
+// full queue briefly, then drop (TCP retransmits; ARP retries).
+func sendShared(fd int, frame []byte) {
+	for i := 0; i < 200; i++ { // ~2ms worst case
+		err := unix.Sendto(fd, frame, unix.MSG_DONTWAIT, nil)
+		switch err {
+		case nil:
+			return
+		case unix.EINTR:
+			continue
+		case unix.EAGAIN, unix.ENOBUFS:
+			if i > 20 {
+				time.Sleep(10 * time.Microsecond)
+			} else {
+				runtime.Gosched()
+			}
+		default:
+			return
+		}
+	}
+	droppedFrames.Add(1)
+}
+
+// sendFrom picks blocking backpressure for pod-originated frames (it only
+// stalls that pod's own port goroutine) and bounded sends otherwise.
+func sendFrom(p *swPort, fd int, frame []byte) {
+	if p == overlayPort || p.uplink {
+		sendShared(fd, frame)
+		return
+	}
+	send(fd, frame)
 }

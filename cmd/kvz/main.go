@@ -29,6 +29,7 @@ import (
 	"github.com/GrowlyX/kvz/pkg/join"
 	"github.com/GrowlyX/kvz/pkg/node"
 	"github.com/GrowlyX/kvz/pkg/pki"
+	"github.com/GrowlyX/kvz/pkg/storage"
 )
 
 func main() {
@@ -154,6 +155,12 @@ func serverCmd() *cobra.Command {
 			if err := bootstrap(ctx, cp.AdminKubeconfig); err != nil {
 				return err
 			}
+			if adm, err := adminClient(cp.AdminKubeconfig); err == nil {
+				if err := storage.EnsureDefaultClass(ctx, adm); err != nil {
+					klog.ErrorS(err, "local-path storage class")
+				}
+				go storage.Run(ctx, adm, nf.name)
+			}
 			go func() {
 				errc <- join.Serve(fmt.Sprintf(":%d", apiPort+1), secret, cp.CA,
 					filepath.Join(cp.CA.Dir, "apiserver.crt"), filepath.Join(cp.CA.Dir, "apiserver.key"))
@@ -238,6 +245,15 @@ func agentCmd() *cobra.Command {
 	_ = c.MarkFlagRequired("server")
 	_ = c.MarkFlagRequired("token")
 	return c
+}
+
+func adminClient(kubeconfig string) (kubernetes.Interface, error) {
+	cfg, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
+	if err != nil {
+		return nil, err
+	}
+	cfg.QPS, cfg.Burst = 200, 400
+	return kubernetes.NewForConfig(cfg)
 }
 
 // bootstrap installs RBAC for nodes and the RuntimeClasses.

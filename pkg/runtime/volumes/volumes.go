@@ -35,6 +35,15 @@ func (m *Materializer) Materialize(pod *corev1.Pod, podDir string) (map[string][
 			}
 		case v.HostPath != nil:
 			dst = v.HostPath.Path
+			if t := v.HostPath.Type; t != nil && (*t == corev1.HostPathDirectoryOrCreate) {
+				_ = os.MkdirAll(dst, 0o777)
+			}
+		case v.PersistentVolumeClaim != nil && m.Client != nil:
+			path, err := m.pvcPath(pod.Namespace, v.PersistentVolumeClaim.ClaimName)
+			if err != nil {
+				return nil, err
+			}
+			dst = path
 		case v.ConfigMap != nil && m.ConfigMaps != nil:
 			cm, err := m.ConfigMaps.ConfigMaps(pod.Namespace).Get(v.ConfigMap.Name)
 			if err != nil {
@@ -219,4 +228,42 @@ func pick(dst, src map[string][]byte, items []corev1.KeyToPath) {
 			dst[it.Path] = v
 		}
 	}
+}
+
+// pvcPath resolves a bound PVC to the host directory backing its PV
+// (local-path / hostPath / local volumes).
+func (m *Materializer) pvcPath(ns, claim string) (string, error) {
+	ctx := context.Background()
+	var pvc *corev1.PersistentVolumeClaim
+	var err error
+	for i := 0; i < 50; i++ { // binding can lag scheduling slightly
+		pvc, err = m.Client.CoreV1().PersistentVolumeClaims(ns).Get(ctx, claim, metav1.GetOptions{})
+		if err == nil && pvc.Spec.VolumeName != "" {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if err != nil {
+		return "", fmt.Errorf("pvc %s: %w", claim, err)
+	}
+	if pvc.Spec.VolumeName == "" {
+		return "", fmt.Errorf("pvc %s is not bound", claim)
+	}
+	pv, err := m.Client.CoreV1().PersistentVolumes().Get(ctx, pvc.Spec.VolumeName, metav1.GetOptions{})
+	if err != nil {
+		return "", fmt.Errorf("pv %s: %w", pvc.Spec.VolumeName, err)
+	}
+	var path string
+	switch {
+	case pv.Spec.HostPath != nil:
+		path = pv.Spec.HostPath.Path
+	case pv.Spec.Local != nil:
+		path = pv.Spec.Local.Path
+	default:
+		return "", fmt.Errorf("pv %s: unsupported volume source (kvz supports hostPath/local)", pv.Name)
+	}
+	if err := os.MkdirAll(path, 0o777); err != nil {
+		return "", err
+	}
+	return path, nil
 }

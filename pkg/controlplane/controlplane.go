@@ -216,7 +216,7 @@ func (cp *ControlPlane) Run(ctx context.Context, ready chan<- struct{}) error {
 			"--secure-port=0",
 			"--cluster-cidr=" + cp.Cfg.ClusterCIDR,
 			"--allocate-node-cidrs=false",
-			"--controllers=*,-nodeipam,-route,-service,-cloud-node-lifecycle,-persistentvolume-binder,-attachdetach,-persistentvolume-expander",
+			"--controllers=*,-nodeipam,-route,-service,-cloud-node-lifecycle,-attachdetach,-persistentvolume-expander",
 			"--kube-api-qps=200", "--kube-api-burst=400",
 			"--concurrent-deployment-syncs=10", "--concurrent-replicaset-syncs=10",
 			"--profiling=false",

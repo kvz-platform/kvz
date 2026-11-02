@@ -4,7 +4,7 @@ import glob, json, os, statistics, sys
 from collections import defaultdict
 
 ROOT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "results")
-PLATS = ["kvz", "lima-k3s", "apple-cluster"]
+PLATS = ["kvz", "kvz-v1", "lima-k3s", "apple-cluster"]
 
 
 def load():

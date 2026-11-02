@@ -30,6 +30,7 @@ import (
 	"k8s.io/klog/v2"
 	statsv1alpha1 "k8s.io/kubelet/pkg/apis/stats/v1alpha1"
 
+	"github.com/GrowlyX/kvz/pkg/podnet"
 	rt "github.com/GrowlyX/kvz/pkg/runtime"
 	"github.com/GrowlyX/kvz/pkg/runtime/linux"
 	"github.com/GrowlyX/kvz/pkg/runtime/macos"
@@ -243,8 +244,16 @@ func Run(ctx context.Context, o Options) error {
 	t := rt.NewTracker()
 	vols := &volumes.Materializer{ConfigMaps: pc.ConfigMaps, Secrets: pc.Secrets}
 	p := &Provider{t: t, backends: map[string]rt.Backend{}, def: o.DefaultHandler, hostIP: o.NodeIP}
+	cidr := os.Getenv("KVZ_POD_CIDR")
+	if cidr == "" {
+		cidr = "10.88.0.0/16"
+	}
+	pn, err := podnet.New(cidr, 0)
+	if err != nil {
+		return fmt.Errorf("pod network: %w", err)
+	}
 	if enabled["linux"] {
-		mb, err := microvmrt.New(o.DataDir, t, vols)
+		mb, err := microvmrt.New(o.DataDir, t, vols, pn)
 		if err != nil {
 			return fmt.Errorf("linux microvm runtime: %w", err)
 		}
@@ -257,7 +266,7 @@ func Run(ctx context.Context, o Options) error {
 		p.backends["darwin"] = process.New(o.DataDir, o.NodeIP, t)
 	}
 	if enabled["macos"] {
-		p.backends["macos"] = macos.New(o.DataDir, t)
+		p.backends["macos"] = macos.New(o.DataDir, t, pn)
 	}
 	spec := corev1.Node{
 		ObjectMeta: metav1.ObjectMeta{Name: o.Name, Labels: labels},

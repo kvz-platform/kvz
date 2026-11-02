@@ -395,6 +395,8 @@ def main():
         pod_burst(p, procs, 20, 20, nginx, "linux-nginx-20")
         if not a.quick:
             pod_burst(p, procs, 50, 50, nginx, "linux-nginx-50", hold=15)
+        if PLAT == "kvz" and not a.quick:
+            pod_burst(p, procs, 100, 100, nginx, "linux-nginx-100", hold=10)
 
     if PLAT == "kvz" and "darwin" not in skip:
         dw = ["--runtime-class", "darwin", "--command", "sleep 3600"]

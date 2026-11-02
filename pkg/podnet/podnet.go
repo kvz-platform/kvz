@@ -11,9 +11,12 @@ package podnet
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
+	"net/http/httptest"
 	"os"
+	"strings"
 	"sync"
 
 	"github.com/containers/gvisor-tap-vsock/pkg/types"
@@ -69,7 +72,9 @@ func New(cidr string, mtu int) (*Net, error) {
 	if err != nil {
 		return nil, err
 	}
-	n := &Net{vn: vn, Subnet: sn, GW: gw, MTU: mtu, used: map[uint32]bool{}, lo: base + 2, hi: base + size - 2}
+	// Static pod IPs come from the top half; the built-in DHCP server (used by
+	// macOS guests) assigns from the bottom up.
+	n := &Net{vn: vn, Subnet: sn, GW: gw, MTU: mtu, used: map[uint32]bool{}, lo: base + size/2, hi: base + size - 2}
 	n.next = n.lo
 	return n, nil
 }
@@ -149,3 +154,30 @@ var podAddr = &net.UnixAddr{Name: "pod", Net: "unixgram"}
 
 func (namedConn) LocalAddr() net.Addr  { return podAddr }
 func (namedConn) RemoteAddr() net.Addr { return podAddr }
+
+// Leases returns the raw DHCP lease table (ip -> mac).
+func (n *Net) Leases() map[string]string {
+	rec := httptest.NewRecorder()
+	n.vn.ServicesMux().ServeHTTP(rec, httptest.NewRequest("GET", "/leases", nil))
+	var leases map[string]string
+	_ = json.Unmarshal(rec.Body.Bytes(), &leases)
+	return leases
+}
+
+// LeaseFor returns the DHCP-assigned IP for mac, if any (macOS guests).
+func (n *Net) LeaseFor(mac string) (string, bool) {
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/leases", nil)
+	n.vn.ServicesMux().ServeHTTP(rec, req)
+	var leases map[string]string // ip -> mac
+	if json.Unmarshal(rec.Body.Bytes(), &leases) != nil {
+		return "", false
+	}
+	want := strings.ToLower(mac)
+	for ip, m := range leases {
+		if strings.ToLower(m) == want {
+			return ip, true
+		}
+	}
+	return "", false
+}

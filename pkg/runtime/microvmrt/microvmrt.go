@@ -79,17 +79,9 @@ func consoleLog(dir string) string {
 
 func exists(p string) bool { _, err := os.Stat(p); return err == nil }
 
-func New(dataDir string, t *rt.Tracker, vols *volumes.Materializer) (*Backend, error) {
+func New(dataDir string, t *rt.Tracker, vols *volumes.Materializer, pn *podnet.Net) (*Backend, error) {
 	home, _ := os.UserHomeDir()
 	initrd, err := microvm.InitrdPath(filepath.Join(dataDir, "microvm"), initBin)
-	if err != nil {
-		return nil, err
-	}
-	cidr := os.Getenv("KVZ_POD_CIDR")
-	if cidr == "" {
-		cidr = "10.88.0.0/16"
-	}
-	pn, err := podnet.New(cidr, 0)
 	if err != nil {
 		return nil, err
 	}

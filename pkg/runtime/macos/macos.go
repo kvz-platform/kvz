@@ -32,6 +32,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
 
+	"github.com/GrowlyX/kvz/pkg/podnet"
 	rt "github.com/GrowlyX/kvz/pkg/runtime"
 )
 
@@ -39,6 +40,7 @@ import (
 const MaxVMs = 2
 
 type Backend struct {
+	pn       *podnet.Net
 	dir      string
 	t        *rt.Tracker
 	slots    chan struct{}
@@ -57,6 +59,7 @@ type instance struct {
 	cancel context.CancelFunc
 	done   chan struct{}
 	slot   bool
+	nic    *os.File // must outlive the VM (VZ does not dup the fd)
 }
 
 type bundleConfig struct {
@@ -65,8 +68,8 @@ type bundleConfig struct {
 	MemorySize    uint64 `json:"memorySize"`
 }
 
-func New(dataDir string, t *rt.Tracker) *Backend {
-	b := &Backend{dir: filepath.Join(dataDir, "vms"), t: t, slots: make(chan struct{}, MaxVMs),
+func New(dataDir string, t *rt.Tracker, pn *podnet.Net) *Backend {
+	b := &Backend{pn: pn, dir: filepath.Join(dataDir, "vms"), t: t, slots: make(chan struct{}, MaxVMs),
 		user: envOr("KVZ_MACOS_SSH_USER", "admin"), password: envOr("KVZ_MACOS_SSH_PASSWORD", "admin"),
 		vms: map[string]*instance{}}
 	return b
@@ -180,7 +183,15 @@ func (b *Backend) run(ctx context.Context, pod *corev1.Pod, inst *instance) erro
 	if mem == 0 {
 		mem = 8 << 30
 	}
-	vm, mac, err := buildVM(bc, disk, nvram, cpus, mem)
+	var nic *os.File
+	if b.pn != nil {
+		nic, err = b.pn.Attach(ctx)
+		if err != nil {
+			return err
+		}
+		inst.nic = nic
+	}
+	vm, mac, err := buildVM(bc, disk, nvram, cpus, mem, nic)
 	if err != nil {
 		return err
 	}
@@ -189,7 +200,7 @@ func (b *Backend) run(ctx context.Context, pod *corev1.Pod, inst *instance) erro
 		return fmt.Errorf("vm start: %w", err)
 	}
 	tStart := time.Since(t0)
-	ip, err := waitLease(ctx, mac, 3*time.Minute)
+	ip, err := b.waitLease(ctx, mac, 3*time.Minute)
 	if err != nil {
 		return err
 	}
@@ -200,7 +211,7 @@ func (b *Backend) run(ctx context.Context, pod *corev1.Pod, inst *instance) erro
 		s.PodIPs = []corev1.PodIP{{IP: ip}}
 		rt.SetRunning(s, c.Name, "vz://"+string(pod.UID), false)
 	})
-	waitBanner(ctx, ip, 5*time.Minute)
+	b.waitBanner(ctx, ip, 5*time.Minute)
 	tBanner := time.Since(t0)
 	cl, err := b.dialSSH(ctx, ip, 5*time.Minute)
 	if err != nil {
@@ -261,7 +272,7 @@ func (b *Backend) run(ctx context.Context, pod *corev1.Pod, inst *instance) erro
 	}
 }
 
-func buildVM(bc bundleConfig, disk, nvram string, cpus uint, mem uint64) (*vz.VirtualMachine, string, error) {
+func buildVM(bc bundleConfig, disk, nvram string, cpus uint, mem uint64, nicFile *os.File) (*vz.VirtualMachine, string, error) {
 	hw, err := base64.StdEncoding.DecodeString(bc.HardwareModel)
 	if err != nil {
 		return nil, "", err
@@ -310,11 +321,21 @@ func buildVM(bc bundleConfig, disk, nvram string, cpus uint, mem uint64) (*vz.Vi
 		return nil, "", err
 	}
 	cfg.SetStorageDevicesVirtualMachineConfiguration([]vz.StorageDeviceConfiguration{blk})
-	nat, err := vz.NewNATNetworkDeviceAttachment()
-	if err != nil {
-		return nil, "", err
+	var netAtt vz.NetworkDeviceAttachment
+	if nicFile != nil {
+		fh, err := vz.NewFileHandleNetworkDeviceAttachment(nicFile)
+		if err != nil {
+			return nil, "", err
+		}
+		netAtt = fh
+	} else {
+		nat, err := vz.NewNATNetworkDeviceAttachment()
+		if err != nil {
+			return nil, "", err
+		}
+		netAtt = nat
 	}
-	nic, err := vz.NewVirtioNetworkDeviceConfiguration(nat)
+	nic, err := vz.NewVirtioNetworkDeviceConfiguration(netAtt)
 	if err != nil {
 		return nil, "", err
 	}
@@ -346,12 +367,17 @@ func buildVM(bc bundleConfig, disk, nvram string, cpus uint, mem uint64) (*vz.Vi
 	return vm, macAddr.String(), nil
 }
 
-// waitLease polls the vmnet DHCP lease file for mac.
-func waitLease(ctx context.Context, mac string, timeout time.Duration) (string, error) {
+// waitLease finds the guest's DHCP lease: from the kvz pod network's DHCP
+// server, or (VZ NAT) from macOS bootpd's lease file.
+func (b *Backend) waitLease(ctx context.Context, mac string, timeout time.Duration) (string, error) {
 	want := normMAC(mac)
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		if ip := leaseFor(want); ip != "" {
+		if b.pn != nil {
+			if ip, ok := b.pn.LeaseFor(mac); ok {
+				return ip, nil
+			}
+		} else if ip := leaseFor(want); ip != "" {
 			return ip, nil
 		}
 		select {
@@ -406,10 +432,10 @@ func leaseFor(mac string) string {
 
 // waitBanner returns once the guest's sshd sends its banner (what `tart ip`
 // based tooling usually treats as "booted").
-func waitBanner(ctx context.Context, ip string, timeout time.Duration) {
+func (b *Backend) waitBanner(ctx context.Context, ip string, timeout time.Duration) {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) && ctx.Err() == nil {
-		c, err := net.DialTimeout("tcp", net.JoinHostPort(ip, "22"), time.Second)
+		c, err := b.dial(ctx, net.JoinHostPort(ip, "22"))
 		if err == nil {
 			_ = c.SetReadDeadline(time.Now().Add(time.Second))
 			buf := make([]byte, 4)
@@ -423,6 +449,17 @@ func waitBanner(ctx context.Context, ip string, timeout time.Duration) {
 	}
 }
 
+// dial reaches the guest: through the pod network when attached to it.
+func (b *Backend) dial(ctx context.Context, addr string) (net.Conn, error) {
+	dctx, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+	if b.pn != nil {
+		return b.pn.Dial(dctx, addr)
+	}
+	var d net.Dialer
+	return d.DialContext(dctx, "tcp", addr)
+}
+
 func (b *Backend) dialSSH(ctx context.Context, ip string, timeout time.Duration) (*ssh.Client, error) {
 	cfg := &ssh.ClientConfig{
 		User:            b.user,
@@ -433,9 +470,11 @@ func (b *Backend) dialSSH(ctx context.Context, ip string, timeout time.Duration)
 	deadline := time.Now().Add(timeout)
 	var last error
 	for time.Now().Before(deadline) {
-		c, err := net.DialTimeout("tcp", net.JoinHostPort(ip, "22"), time.Second)
+		c, err := b.dial(ctx, net.JoinHostPort(ip, "22"))
 		if err == nil {
+			_ = c.SetDeadline(time.Now().Add(10 * time.Second))
 			conn, chans, reqs, err := ssh.NewClientConn(c, ip+":22", cfg)
+			_ = c.SetDeadline(time.Time{})
 			if err == nil {
 				return ssh.NewClient(conn, chans, reqs), nil
 			}
@@ -480,6 +519,9 @@ func (b *Backend) Stop(ctx context.Context, pod *corev1.Pod) error {
 		}
 	}
 	<-inst.done
+	if inst.nic != nil {
+		inst.nic.Close()
+	}
 	if inst.slot {
 		<-b.slots
 	}

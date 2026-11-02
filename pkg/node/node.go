@@ -478,6 +478,9 @@ func Run(ctx context.Context, o Options) error {
 	}
 	tlsCfg := &tls.Config{MinVersion: tls.VersionTLS12, Certificates: []tls.Certificate{cert}, ClientCAs: pool, ClientAuth: tls.RequireAndVerifyClientCert}
 	mux := http.NewServeMux()
+	mux.Handle("/metrics", p.metricsHandler())
+	mux.Handle("/metrics/cadvisor", p.cadvisorHandler())
+	mux.Handle("/metrics/resource", p.resourceHandler())
 	mux.Handle("/", api.PodHandler(api.PodHandlerConfig{
 		RunInContainer: p.RunInContainer, AttachToContainer: p.AttachToContainer, GetContainerLogs: p.GetContainerLogs,
 		GetPods: p.GetPods, GetStatsSummary: p.GetStatsSummary, GetMetricsResource: p.GetMetricsResource, PortForward: p.PortForward,

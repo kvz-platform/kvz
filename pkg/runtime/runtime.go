@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 	"sync"
 	"time"
 
@@ -221,7 +222,8 @@ func SetTerminated(s *corev1.PodStatus, container string, code int32, reason str
 			started = cs.State.Running.StartedAt
 		}
 		cs.State = corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{ExitCode: code, Reason: reason, StartedAt: started, FinishedAt: now()}}
-		cs.Ready = false
+		// like the kubelet: a regular init container that completed successfully is Ready
+		cs.Ready = code == 0 && IsInit(s, container) && !strings.HasPrefix(cs.ContainerID, SidecarIDPrefix)
 	}
 	Recompute(s)
 }

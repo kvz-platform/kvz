@@ -18,14 +18,11 @@ You use it with the same `kubectl` and YAML you already know.
 
 ## Quick start
 
-You need an Apple Silicon Mac running macOS 26 or later, plus Go and Xcode's
-command line tools.
+You need an Apple Silicon Mac running macOS 26 or later.
 
 ```sh
-git clone https://github.com/GrowlyX/kvz && cd kvz
-make build                      # builds and signs bin/kvz
-./kernel/build.sh               # builds the 8.5 MB pod kernel into ~/.kvz/kernel
-./bin/kvz server                # starts the cluster and prints how to connect
+brew install kvz-platform/tap/kvz
+kvz server                      # starts the cluster and prints how to connect
 ```
 
 In a second terminal:
@@ -37,8 +34,8 @@ kubectl get pods
 ```
 
 That pod is a fresh Linux VM. The [getting started guide](docs/getting-started.md)
-walks through macOS and native pods, adding more Macs, and running kvz as a
-background service.
+covers macOS and native pods, adding more Macs, running kvz in the background,
+and building from source.
 
 ## How it compares
 
@@ -65,6 +62,8 @@ Full tables and method: [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
 | [Architecture](docs/ARCHITECTURE.md) | How kvz embeds Kubernetes on macOS |
 | [Benchmarks](docs/BENCHMARKS.md) | Every result, per machine, with the method |
 | [Optimization report](docs/REPORT.md) | How Linux pods went from 12 s to 0.25 s |
+| [Contributing](CONTRIBUTING.md) | Building, testing and sending changes |
+| [Releasing](docs/releasing.md) | Version numbers, CI and how releases ship |
 
 ## Status
 
@@ -72,5 +71,6 @@ kvz is a prototype. It passes the Sonobuoy quick conformance check and runs
 real workloads (Deployments, StatefulSets, Jobs, Services, Ingress, volumes),
 but it's young. Please don't run production on it yet.
 
-The brand assets (logos, banners, social images) are in
-[docs/assets/brand-v1](docs/assets/brand-v1).
+Found a security problem? Please report it privately, as described in
+[SECURITY.md](SECURITY.md). The brand assets (logos, banners, social images)
+are in [docs/assets/brand-v1](docs/assets/brand-v1).

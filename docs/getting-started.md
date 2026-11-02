@@ -1,43 +1,41 @@
 # Getting started
 
-This guide takes you from a fresh clone to a cluster running all three kinds of
-pods. It takes about ten minutes, most of it building the pod kernel once.
+This guide takes you from installing kvz to a cluster running all three kinds
+of pods. It takes a few minutes.
 
 ## What you need
 
 - An **Apple Silicon Mac** (M1 or later) running **macOS 26 or later**.
-- **Go** and the **Xcode command line tools** (`xcode-select --install`), to
-  build kvz.
-- **Apple's `container` tool**, used once to build the pod kernel.
 - **`kubectl`**, or use the one built into kvz (`kvz kubectl`).
 - **`tart`**, only if you want macOS pods from OCI images.
 
-## 1. Build kvz
+## 1. Install kvz
 
 ```sh
-git clone https://github.com/GrowlyX/kvz && cd kvz
-make build
+brew install kvz-platform/tap/kvz
 ```
 
-This produces `bin/kvz` and signs it with the virtualization entitlement it
-needs to start VMs.
+This installs a signed and notarized `kvz` and the small Linux kernel that pods
+boot (8.5 MB). Update later with `brew upgrade kvz`.
 
-## 2. Build the pod kernel
+## 2. Or build from source
 
-Linux pods boot a small kernel made for kvz (Linux 6.18, about 8.5 MB). Build it
-once:
+Skip this if you used Homebrew. To build from source you also need Go, the
+Xcode command line tools, and Apple's `container` tool (used once, to build the
+kernel).
 
 ```sh
-./kernel/build.sh
+git clone https://github.com/kvz-platform/kvz && cd kvz
+make build                 # bin/kvz, signed for Virtualization.framework
+./kernel/build.sh          # the pod kernel, into ~/.kvz/kernel/Image
 ```
 
-The kernel lands in `~/.kvz/kernel/Image`. If it's missing, kvz falls back to
-the kernel that ships with Apple's `container`, which works but boots slower.
+The steps below write `kvz`. From a source build, that's `./bin/kvz`.
 
 ## 3. Start the cluster
 
 ```sh
-./bin/kvz server
+kvz server
 ```
 
 kvz starts etcd, the API server, the scheduler, the controllers and a local
@@ -118,10 +116,10 @@ macOS allows two macOS VMs per Mac. Extra macOS pods wait with the reason
 
 ## 7. Add more Macs
 
-On each extra Mac, build kvz and run the `join` command the server printed:
+On each extra Mac, install kvz and run the `join` command the server printed:
 
 ```sh
-./bin/kvz agent --server https://192.168.1.20:6443 --token K10…::…
+kvz agent --server https://192.168.1.20:6443 --token K10…::…
 ```
 
 The new Mac shows up in `kubectl get nodes`, and pods spread across all of
@@ -132,7 +130,7 @@ them. Pods on different Macs can reach each other and use the same Services.
 To keep kvz running after you close the terminal, and start it at login:
 
 ```sh
-./bin/kvz install server        # or: kvz install agent --server … --token …
+kvz install server        # or: kvz install agent --server … --token …
 ```
 
 This installs a launchd service and starts it. Logs go to `~/.kvz/logs`. Remove

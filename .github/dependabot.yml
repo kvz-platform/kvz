@@ -1,0 +1,17 @@
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule: {interval: weekly}
+    open-pull-requests-limit: 5
+    commit-message: {prefix: build, include: scope}
+    groups:
+      # Kubernetes modules move together and must stay on one version
+      kubernetes:
+        patterns: ["k8s.io/*", "sigs.k8s.io/*"]
+      etcd:
+        patterns: ["go.etcd.io/*"]
+    ignore:
+      # minor Kubernetes bumps change the release line (v1.35 -> v1.36); do them by hand
+      - dependency-name: "k8s.io/*"
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]

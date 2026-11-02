@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: light)" srcset="docs/assets/brand-v1/readme-banner-light-1280x320.svg">
+    <img alt="kvz — native macOS kubernetes" src="docs/assets/brand-v1/readme-banner-1280x320.svg" width="100%">
+  </picture>
+</p>
+
 # kvz — native-macOS Kubernetes
 
 A k3s-style, single-binary Kubernetes distribution that runs **natively on macOS** — no Linux VM for the

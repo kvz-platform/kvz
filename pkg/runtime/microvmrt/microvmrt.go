@@ -19,6 +19,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -51,12 +52,13 @@ type Backend struct {
 }
 
 type pod struct {
-	vm     *microvm.VM
-	ip     net.IP
-	dir    string
-	cancel context.CancelFunc
-	done   chan struct{}
-	names  []string
+	stopping atomic.Bool // set by Stop: exits are final, never CrashLoopBackOff
+	vm       *microvm.VM
+	ip       net.IP
+	dir      string
+	cancel   context.CancelFunc
+	done     chan struct{}
+	names    []string
 }
 
 func DefaultKernel() string {
@@ -375,7 +377,7 @@ func (b *Backend) run(ctx context.Context, p *corev1.Pod, ps *pod) error {
 					reason = "Error"
 				}
 				b.t.Update(p.Namespace, p.Name, func(s *corev1.PodStatus) {
-					if rt.WillRestart(p.Spec.RestartPolicy, code) {
+					if !ps.stopping.Load() && rt.WillRestart(p.Spec.RestartPolicy, code) {
 						rt.SetCrashLoop(s, e.Container, code, reason)
 					} else {
 						rt.SetTerminated(s, e.Container, code, reason)
@@ -397,6 +399,7 @@ func (b *Backend) Stop(ctx context.Context, p *corev1.Pod) error {
 	if ps == nil {
 		return nil
 	}
+	ps.stopping.Store(true)
 	b.mu.Lock()
 	vm := ps.vm
 	b.mu.Unlock()

@@ -401,7 +401,7 @@ func bootstrap(ctx context.Context, kubeconfig string) error {
 	cr := &rbacv1.ClusterRole{ObjectMeta: metav1.ObjectMeta{Name: "kvz:node"}, Rules: []rbacv1.PolicyRule{
 		{APIGroups: []string{""}, Resources: []string{"secrets", "configmaps", "services", "pods"}, Verbs: []string{"get", "list", "watch"}},
 		{APIGroups: []string{"discovery.k8s.io"}, Resources: []string{"endpointslices"}, Verbs: []string{"get", "list", "watch"}},
-		{APIGroups: []string{""}, Resources: []string{"nodes", "namespaces"}, Verbs: []string{"get", "list", "watch"}},
+		{APIGroups: []string{""}, Resources: []string{"nodes", "namespaces", "persistentvolumes"}, Verbs: []string{"get", "list", "watch"}},
 		{APIGroups: []string{"networking.k8s.io"}, Resources: []string{"networkpolicies"}, Verbs: []string{"get", "list", "watch"}},
 	}}
 	if _, err := cs.RbacV1().ClusterRoles().Create(ctx, cr, metav1.CreateOptions{}); apierrors.IsAlreadyExists(err) {

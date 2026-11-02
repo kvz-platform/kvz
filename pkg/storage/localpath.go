@@ -9,6 +9,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -131,7 +132,7 @@ func Run(ctx context.Context, cs kubernetes.Interface, localNode string) {
 			}
 			if pv.Spec.HostPath != nil && nodeOf(pv) == localNode {
 				_ = os.RemoveAll(pv.Spec.HostPath.Path)
-			}
+			} // other nodes remove their own data in GCOrphans
 			if err := cs.CoreV1().PersistentVolumes().Delete(ctx, pv.Name, metav1.DeleteOptions{}); err == nil {
 				klog.InfoS("local-path: reclaimed", "pv", pv.Name)
 			}
@@ -151,4 +152,44 @@ func nodeOf(pv *corev1.PersistentVolume) string {
 		}
 	}
 	return ""
+}
+
+// GCOrphans runs on every node: it deletes local-path directories under Root
+// whose PersistentVolume no longer exists (volumes released on this node while
+// the reclaiming server was another machine).
+func GCOrphans(ctx context.Context, cs kubernetes.Interface) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(time.Minute):
+		}
+		pvs, err := cs.CoreV1().PersistentVolumes().List(ctx, metav1.ListOptions{})
+		if err != nil {
+			continue
+		}
+		live := map[string]bool{}
+		for _, pv := range pvs.Items {
+			if pv.Spec.HostPath != nil {
+				live[filepath.Clean(pv.Spec.HostPath.Path)] = true
+			}
+		}
+		entries, _ := os.ReadDir(Root)
+		for _, e := range entries {
+			// only directories this provisioner created: <ns>_<pvc>_pvc-<uid>
+			if !e.IsDir() || !strings.Contains(e.Name(), "_pvc-") {
+				continue
+			}
+			p := filepath.Join(Root, e.Name())
+			if live[p] {
+				continue
+			}
+			if st, err := os.Stat(p); err == nil && time.Since(st.ModTime()) < 2*time.Minute {
+				continue // just provisioned; the PV may not be in our list yet
+			}
+			if err := os.RemoveAll(p); err == nil {
+				klog.InfoS("local-path: removed orphaned volume data", "path", p)
+			}
+		}
+	}
 }

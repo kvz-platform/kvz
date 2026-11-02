@@ -51,15 +51,15 @@ type affEntry struct {
 }
 
 type natTable struct {
-	mu    sync.RWMutex
-	svcs  map[svcKey][]Backend
+	mu   sync.RWMutex
+	svcs map[svcKey][]Backend
 	// sessionAffinity: ClientIP (timeout per service, sticky choices)
 	affTimeout map[svcKey]int64 // nanoseconds
 	aff        map[affKey]*affEntry
-	fwd   map[ctKey]*ctEntry // client -> service (key: original tuple)
-	rev   map[ctKey]*ctEntry // backend -> client (key: reply tuple as seen from backend)
-	cidr  *net.IPNet
-	gwMAC [6]byte
+	fwd        map[ctKey]*ctEntry // client -> service (key: original tuple)
+	rev        map[ctKey]*ctEntry // backend -> client (key: reply tuple as seen from backend)
+	cidr       *net.IPNet
+	gwMAC      [6]byte
 }
 
 func newNATTable(serviceCIDR string, gwMAC net.HardwareAddr) *natTable {

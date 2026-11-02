@@ -8,8 +8,9 @@ PLATS = ["kvz", "kvz-v1", "lima-k3s", "apple-cluster"]
 
 
 def load():
-    """Load every JSONL file; for run.py output keep only the latest run per
-    (host, platform): each run starts with a {"suite":"host"} record."""
+    """Load every JSONL file. run.py appends one run after another (each starts
+    with a {"suite":"host"} record); a later run overrides only the suites it
+    contains, so partial reruns refresh just what they measured."""
     rows = []
     for f in glob.glob(os.path.join(ROOT, "*", "*.jsonl")):
         recs = []
@@ -18,10 +19,23 @@ def load():
                 recs.append(json.loads(l))
             except Exception:
                 pass
-        starts = [i for i, r in enumerate(recs) if r.get("suite") == "host"]
-        if starts:
-            recs = recs[starts[-1]:]
-        rows.extend(recs)
+        runs, cur = [], []
+        for r in recs:
+            if r.get("suite") == "host" and cur:
+                runs.append(cur)
+                cur = []
+            cur.append(r)
+        if cur:
+            runs.append(cur)
+        merged = {}
+        for run in runs:
+            groups = {}
+            for r in run:
+                k = (r.get("suite"), r.get("variant") or r.get("op") or r.get("kind") or "")
+                groups.setdefault(k, []).append(r)
+            merged.update(groups)
+        for g in merged.values():
+            rows.extend(g)
     return rows
 
 

@@ -10,6 +10,7 @@
 package podnet
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -27,6 +28,7 @@ import (
 type Net struct {
 	vn     *virtualnetwork.VirtualNetwork
 	sw     *fastSwitch
+	nat    *natTable
 	Subnet *net.IPNet
 	GW     net.IP
 	MTU    int
@@ -85,8 +87,14 @@ func New(cidr string, mtu int) (*Net, error) {
 		if err != nil {
 			return nil, err
 		}
-		n.sw = newFastSwitch()
-		n.sw.add(up[0], true)
+		gwmac, _ := net.ParseMAC("5a:94:ef:e4:0c:dd")
+		svcCIDR := os.Getenv("KVZ_SERVICE_CIDR")
+		if svcCIDR == "" {
+			svcCIDR = "10.43.0.0/16"
+		}
+		n.nat = newNATTable(svcCIDR, gwmac)
+		n.sw = newFastSwitch(n.nat)
+		n.sw.add(up[0], true, [4]byte{}, [6]byte{})
 		f := os.NewFile(uintptr(up[1]), "podnet-uplink")
 		conn, err := net.FileConn(f)
 		f.Close()
@@ -144,14 +152,27 @@ func socketpair() ([2]int, error) {
 	return [2]int{fds[0], fds[1]}, nil
 }
 
-func (n *Net) Attach(ctx context.Context) (*os.File, error) {
+// Attach creates a NIC for one VM (see AttachPod).
+func (n *Net) Attach(ctx context.Context) (*os.File, error) { return n.AttachPod(ctx, nil, nil) }
+
+// AttachPod creates a NIC for a VM whose IP and MAC are known up front, so
+// the switch can deliver service traffic to it before it has sent a frame.
+func (n *Net) AttachPod(ctx context.Context, ip net.IP, mac net.HardwareAddr) (*os.File, error) {
 	fds, err := socketpair()
 	if err != nil {
 		return nil, err
 	}
 	vmSide := os.NewFile(uintptr(fds[0]), "pod-nic-vm")
 	if n.sw != nil {
-		port := n.sw.add(fds[1], false)
+		var pip [4]byte
+		var pmac [6]byte
+		if ip != nil {
+			copy(pip[:], ip.To4())
+		}
+		if mac != nil {
+			copy(pmac[:], mac)
+		}
+		port := n.sw.add(fds[1], false, pip, pmac)
 		go func() {
 			<-ctx.Done()
 			n.sw.remove(port)
@@ -218,4 +239,23 @@ func (n *Net) LeaseFor(mac string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// SetService programs a ClusterIP:port (proto "TCP"/"UDP") with its backends.
+func (n *Net) SetService(vip net.IP, port uint16, proto string, backends []Backend) {
+	if n.nat == nil {
+		return
+	}
+	p := uint8(6)
+	if proto == "UDP" {
+		p = 17
+	}
+	n.nat.SetService(vip, port, p, backends)
+}
+
+// AddDNS publishes name (relative to zone) -> ip on the gateway DNS server.
+func (n *Net) AddDNS(zone, name string, ip net.IP) {
+	body, _ := json.Marshal(types.Zone{Name: zone, Records: []types.Record{{Name: name, IP: ip}}})
+	req := httptest.NewRequest("POST", "/services/dns/add", bytes.NewReader(body))
+	n.vn.ServicesMux().ServeHTTP(httptest.NewRecorder(), req)
 }

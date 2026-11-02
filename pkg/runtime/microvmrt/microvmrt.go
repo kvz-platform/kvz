@@ -9,6 +9,7 @@ package microvmrt
 
 import (
 	"context"
+	crand "crypto/rand"
 	_ "embed"
 	"encoding/json"
 	"fmt"
@@ -125,6 +126,7 @@ type mspec struct {
 }
 
 type spec struct {
+	Search     []string `json:"search"`
 	MTU        int      `json:"mtu"`
 	IP         string   `json:"ip"`
 	Mask       int      `json:"mask"`
@@ -170,7 +172,8 @@ func (b *Backend) Start(ctx context.Context, p *corev1.Pod) error {
 }
 
 func (b *Backend) buildSpec(p *corev1.Pod, ps *pod) (*spec, []microvm.Share, error) {
-	sp := &spec{Hostname: p.Name, DNS: b.dns, IP: ps.ip.String(), Mask: b.pnet.Bits(), GW: b.pnet.GW.String(), MTU: b.pnet.MTU}
+	sp := &spec{Hostname: p.Name, DNS: b.dns,
+		Search: []string{p.Namespace + ".svc.cluster.local", "svc.cluster.local", "cluster.local"}, IP: ps.ip.String(), Mask: b.pnet.Bits(), GW: b.pnet.GW.String(), MTU: b.pnet.MTU}
 	if p.Spec.Hostname != "" {
 		sp.Hostname = p.Spec.Hostname
 	}
@@ -353,12 +356,13 @@ func (b *Backend) run(ctx context.Context, p *corev1.Pod, ps *pod) error {
 	if err := os.WriteFile(filepath.Join(ps.dir, "spec.json"), raw, 0o644); err != nil {
 		return err
 	}
-	nic, err := b.pnet.Attach(ctx)
+	mac := randomMAC()
+	nic, err := b.pnet.AttachPod(ctx, ps.ip, mac)
 	if err != nil {
 		return err
 	}
 	vm, err := microvm.Boot(microvm.Config{Kernel: b.kernel, Initrd: b.initrd, IP: ps.ip, GW: b.pnet.GW, Mask: b.pnet.Bits(),
-		CPUs: vcpus(p), MemoryMB: memMB(p), Shares: shares, ConsoleLog: consoleLog(ps.dir), NetFile: nic, MTU: b.pnet.MTU})
+		CPUs: vcpus(p), MemoryMB: memMB(p), Shares: shares, ConsoleLog: consoleLog(ps.dir), NetFile: nic, MTU: b.pnet.MTU, MAC: mac})
 	if err != nil {
 		nic.Close()
 		return err
@@ -514,4 +518,11 @@ func (b *Backend) PortForward(ctx context.Context, p *corev1.Pod, port int32, st
 	go func() { io.Copy(stream, c); done <- struct{}{} }()
 	<-done
 	return nil
+}
+
+func randomMAC() net.HardwareAddr {
+	m := make([]byte, 6)
+	_, _ = crand.Read(m)
+	m[0] = (m[0] | 0x02) & 0xfe // locally administered, unicast
+	return net.HardwareAddr(m)
 }

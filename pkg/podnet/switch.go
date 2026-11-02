@@ -17,25 +17,39 @@ type fastSwitch struct {
 	cam    map[[6]byte]*swPort
 	ports  map[*swPort]struct{}
 	uplink *swPort
+	ipMAC  map[[4]byte][6]byte // pod IP -> MAC (registered at attach)
+	nat    *natTable
 }
 
 type swPort struct {
 	fd     int
 	uplink bool
+	ip     [4]byte
+	mac    [6]byte
 }
 
-func newFastSwitch() *fastSwitch {
-	return &fastSwitch{cam: map[[6]byte]*swPort{}, ports: map[*swPort]struct{}{}}
+func newFastSwitch(nat *natTable) *fastSwitch {
+	return &fastSwitch{cam: map[[6]byte]*swPort{}, ports: map[*swPort]struct{}{}, ipMAC: map[[4]byte][6]byte{}, nat: nat}
+}
+
+func (s *fastSwitch) macOf(ip [4]byte) ([6]byte, bool) {
+	s.mu.RLock()
+	m, ok := s.ipMAC[ip]
+	s.mu.RUnlock()
+	return m, ok
 }
 
 const frameMax = 65536 + 64
 
-func (s *fastSwitch) add(fd int, uplink bool) *swPort {
-	p := &swPort{fd: fd, uplink: uplink}
+func (s *fastSwitch) add(fd int, uplink bool, ip [4]byte, mac [6]byte) *swPort {
+	p := &swPort{fd: fd, uplink: uplink, ip: ip, mac: mac}
 	s.mu.Lock()
 	s.ports[p] = struct{}{}
 	if uplink {
 		s.uplink = p
+	} else if ip != ([4]byte{}) {
+		s.ipMAC[ip] = mac
+		s.cam[mac] = p
 	}
 	s.mu.Unlock()
 	go s.rx(p)
@@ -45,6 +59,9 @@ func (s *fastSwitch) add(fd int, uplink bool) *swPort {
 func (s *fastSwitch) remove(p *swPort) {
 	s.mu.Lock()
 	delete(s.ports, p)
+	if !p.uplink {
+		delete(s.ipMAC, p.ip)
+	}
 	for mac, q := range s.cam {
 		if q == p {
 			delete(s.cam, mac)
@@ -84,6 +101,28 @@ func (s *fastSwitch) rx(p *swPort) {
 			s.mu.Unlock()
 		}
 		frame := buf[:n]
+		if s.nat != nil && dst[0]&1 == 0 {
+			if hit, dmac, viaUp := s.nat.outbound(frame, s.macOf); hit {
+				copy(frame[0:6], dmac[:])
+				var q *swPort
+				s.mu.RLock()
+				if viaUp {
+					q = s.uplink
+				} else {
+					q = s.cam[dmac]
+					if q == nil {
+						q = s.uplink
+					}
+				}
+				s.mu.RUnlock()
+				if q != nil && q != p {
+					send(q.fd, frame)
+				} else if q == p {
+					send(p.fd, frame) // hairpin: pod reaching its own service
+				}
+				continue
+			}
+		}
 		if dst[0]&1 == 1 { // broadcast / multicast: flood
 			s.flood(p, frame)
 			continue

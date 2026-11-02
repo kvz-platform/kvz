@@ -45,6 +45,7 @@ type Container struct {
 }
 
 type Spec struct {
+	Search     []string    `json:"search"`
 	MTU        int         `json:"mtu"`
 	IP         string      `json:"ip"`
 	Mask       int         `json:"mask"`
@@ -128,6 +129,11 @@ func main() {
 	must(mount("proc", "/proc", "proc", 0, ""), "mount /proc")
 	must(mount("devtmpfs", "/dev", "devtmpfs", 0, ""), "mount /dev")
 	must(mount("devpts", "/dev/pts", "devpts", 0, "ptmxmode=0666"), "mount /dev/pts")
+	// what udev/runc normally provide: images symlink logs to /dev/stdout
+	for l, t := range map[string]string{"/dev/fd": "/proc/self/fd", "/dev/stdin": "/proc/self/fd/0",
+		"/dev/stdout": "/proc/self/fd/1", "/dev/stderr": "/proc/self/fd/2", "/dev/core": "/proc/kcore"} {
+		_ = os.Symlink(t, l)
+	}
 	must(mount("kvz", "/v", "virtiofs", 0, ""), "mount kvz share")
 	must(mount("/v/pod", "/kvz", "", unix.MS_BIND, ""), "bind pod dir")
 	go serveExec()
@@ -182,6 +188,9 @@ func main() {
 			var b strings.Builder
 			for _, d := range spec.DNS {
 				b.WriteString("nameserver " + d + "\n")
+			}
+			if len(spec.Search) > 0 {
+				b.WriteString("search " + strings.Join(spec.Search, " ") + "\noptions ndots:5\n")
 			}
 			_ = os.WriteFile(etc+"/resolv.conf", []byte(b.String()), 0o644)
 		}

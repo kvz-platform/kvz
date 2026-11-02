@@ -34,6 +34,7 @@ func main() {
 	base := flag.Int("ip-base", 200, "first host octet")
 	extra := flag.String("args", "", "extra kernel args")
 	usePodnet := flag.Bool("podnet", true, "use kvz podnet (false = VZ NAT)")
+	noEnt := flag.Bool("no-entropy", false, "omit virtio-rng")
 	flag.Parse()
 
 	home, _ := os.UserHomeDir()
@@ -98,7 +99,7 @@ func main() {
 			}
 			vm, err := microvm.Boot(microvm.Config{Kernel: *kernel, Initrd: initrd, CPUs: *cpus, MemoryMB: *mem,
 				IP: net.ParseIP(fmt.Sprintf("192.168.65.%d", *base+i)), GW: net.ParseIP("192.168.65.1"), Mask: 24,
-				Shares: []microvm.Share{{Tag: "pod", Path: dir}, {Tag: im.Tag, Path: im.Rootfs, ReadOnly: true}}, ConsoleLog: cl, ExtraArgs: *extra, NetFile: nic})
+				Shares: []microvm.Share{{Tag: "pod", Path: dir}, {Tag: im.Tag, Path: im.Rootfs, ReadOnly: true}}, ConsoleLog: cl, ExtraArgs: *extra, NetFile: nic, NoEntropy: *noEnt})
 			if err != nil {
 				out[i].err = err.Error()
 				return

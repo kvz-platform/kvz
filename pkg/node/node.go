@@ -307,6 +307,7 @@ func Run(ctx context.Context, o Options) error {
 		GetPods: p.GetPods, GetStatsSummary: p.GetStatsSummary, GetMetricsResource: p.GetMetricsResource, PortForward: p.PortForward,
 		GetPodsFromKubernetes: func(context.Context) ([]*corev1.Pod, error) { return pc.Pods.List(k8slabels.Everything()) },
 	}, false))
+	go runServiceProxy(ctx, informers.NewSharedInformerFactory(cs, 10*time.Minute), pn)
 	klog.InfoS("starting kvz node", "name", o.Name, "ip", o.NodeIP, "backends", o.Backends)
 	return runVK(ctx, vkConfig{name: o.Name, client: cs, spec: spec, provider: p, listenAddr: fmt.Sprintf(":%d", o.ListenPort),
 		tlsConfig: tlsCfg, handler: mux, workers: o.Workers}, pc, podInf, scmInf)

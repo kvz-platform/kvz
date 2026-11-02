@@ -36,6 +36,8 @@ type Config struct {
 	ConsoleLog string   // "" = no console
 	NetFile    *os.File // VM side of a podnet socketpair; nil = Virtualization.framework NAT
 	MTU        int
+	NoEntropy  bool             // skip virtio-rng (kernel seeds from the CPU's RNDR)
+	MAC        net.HardwareAddr // nil = random
 	ExtraArgs  string
 }
 
@@ -129,7 +131,12 @@ func Boot(c Config) (*VM, error) {
 	if err != nil {
 		return nil, err
 	}
-	mac, err := vz.NewRandomLocallyAdministeredMACAddress()
+	var mac *vz.MACAddress
+	if c.MAC != nil {
+		mac, err = vz.NewMACAddress(c.MAC)
+	} else {
+		mac, err = vz.NewRandomLocallyAdministeredMACAddress()
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -142,7 +149,9 @@ func Boot(c Config) (*VM, error) {
 	}
 	cfg.SetSocketDevicesVirtualMachineConfiguration([]vz.SocketDeviceConfiguration{vs})
 	// entropy
-	if ent, err := vz.NewVirtioEntropyDeviceConfiguration(); err == nil {
+	if c.NoEntropy {
+		// no virtio-rng
+	} else if ent, err := vz.NewVirtioEntropyDeviceConfiguration(); err == nil {
 		cfg.SetEntropyDevicesVirtualMachineConfiguration([]*vz.VirtioEntropyDeviceConfiguration{ent})
 	}
 	// One virtiofs device (tag "kvz") exporting every directory the pod needs

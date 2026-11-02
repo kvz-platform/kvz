@@ -94,6 +94,9 @@ func (s *Store) Ensure(ref, policy string, kc authn.Keychain) (*Image, error) {
 // Has reports whether ref is already in the store.
 func (s *Store) Has(ref string) bool { return s.local(ref) != nil }
 
+// Dir is the store's root directory (per-digest image dirs live below it).
+func (s *Store) Dir() string { return s.dir }
+
 func (s *Store) local(ref string) *Image {
 	s.mu.Lock()
 	im := s.mem[ref]

@@ -40,6 +40,7 @@ type Container struct {
 	UID        int      `json:"uid"`
 	GID        int      `json:"gid"`
 	TTY        bool     `json:"tty"`
+	Stdin      bool     `json:"stdin,omitempty"`
 	ImageTag   string   `json:"image_tag"`         // virtiofs tag of the image rootfs
 	Restart    string   `json:"restart"`           // Always | OnFailure | Never
 	Sidecar    bool     `json:"sidecar,omitempty"` // restartable init container
@@ -182,6 +183,7 @@ func main() {
 	must(err, "read spec")
 	var spec Spec
 	must(json.Unmarshal(raw, &spec), "parse spec")
+	bootSpec = spec
 	if spec.Hostname != "" {
 		_ = unix.Sethostname([]byte(spec.Hostname))
 	}
@@ -372,14 +374,17 @@ func resolve(root, argv0 string, env []string) string {
 }
 
 type Command struct {
-	Type      string `json:"type"`
-	Container string `json:"container"`
-	Signal    int    `json:"signal"`
-	Grace     int    `json:"grace"`
+	Type      string     `json:"type"`
+	Container string     `json:"container"`
+	Signal    int        `json:"signal"`
+	Grace     int        `json:"grace"`
+	Spec      *Container `json:"spec,omitempty"`   // add-container
+	Mounts    []Mount    `json:"mounts,omitempty"` // add-container
 }
 
 func commands(conn *os.File) {
 	sc := bufio.NewScanner(conn)
+	sc.Buffer(make([]byte, 64<<10), 4<<20) // add-container carries a full spec
 	for sc.Scan() {
 		var c Command
 		if json.Unmarshal(sc.Bytes(), &c) != nil {
@@ -403,6 +408,10 @@ func commands(conn *os.File) {
 				time.Sleep(10 * time.Millisecond)
 			}
 			signalWhere(isSidecar, syscall.Signal(c.Signal))
+		case "add-container":
+			if c.Spec != nil {
+				go addContainer(*c.Spec, c.Mounts)
+			}
 		case "poweroff":
 			unix.Sync()
 			_ = unix.Reboot(unix.LINUX_REBOOT_CMD_POWER_OFF)

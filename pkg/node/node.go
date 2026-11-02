@@ -212,6 +212,15 @@ func (p *Provider) AttachToContainer(ctx context.Context, ns, name, c string, at
 	if c == "" && len(pod.Spec.Containers) > 0 {
 		c = pod.Spec.Containers[0].Name
 	}
+	// interactive containers (stdin+tty, e.g. kubectl debug -it): attach to
+	// the console itself rather than following logs
+	if ta, ok := b.(interface {
+		AttachTTY(ctx context.Context, pod *corev1.Pod, container string, attach api.AttachIO) (bool, error)
+	}); ok {
+		if handled, err := ta.AttachTTY(ctx, pod, c, attach); handled {
+			return err
+		}
+	}
 	actx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	rc, err := b.Logs(actx, pod, c, api.ContainerLogOpts{Follow: true})

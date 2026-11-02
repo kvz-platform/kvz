@@ -47,6 +47,7 @@ type Event struct {
 	Pid       int        `json:"pid,omitempty"`
 	Code      int        `json:"code,omitempty"`
 	Msg       string     `json:"msg,omitempty"`
+	Reason    string     `json:"reason,omitempty"`    // e.g. OOMKilled
 	Listeners []Listener `json:"listeners,omitempty"` // hostNetwork pods
 	BootMs    float64    `json:"boot_ms,omitempty"`
 	ReadyMs   float64    `json:"ready_ms,omitempty"`

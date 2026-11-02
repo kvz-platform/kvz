@@ -40,6 +40,7 @@ type Container struct {
 	UID        int      `json:"uid"`
 	GID        int      `json:"gid"`
 	TTY        bool     `json:"tty"`
+	Cgroup     *Cgroup  `json:"cgroup,omitempty"`
 	ImageTag   string   `json:"image_tag"`         // virtiofs tag of the image rootfs
 	Restart    string   `json:"restart"`           // Always | OnFailure | Never
 	Sidecar    bool     `json:"sidecar,omitempty"` // restartable init container
@@ -95,6 +96,7 @@ type Event struct {
 	Pid       int        `json:"pid,omitempty"`
 	Code      int        `json:"code,omitempty"`
 	Msg       string     `json:"msg,omitempty"`
+	Reason    string     `json:"reason,omitempty"`    // e.g. OOMKilled
 	Listeners []Listener `json:"listeners,omitempty"` // hostNetwork pods
 	BootMs    float64    `json:"boot_ms,omitempty"`   // CLOCK_BOOTTIME when init started
 	ReadyMs   float64    `json:"ready_ms,omitempty"`
@@ -219,6 +221,7 @@ func main() {
 	netDone := make(chan error, 1)
 	go func() { netDone <- setupNetwork(spec.IP, spec.Mask, spec.GW, spec.MTU) }()
 
+	setupCgroups()
 	// Per image: one read-only virtiofs lower; per container: overlay root.
 	roots := map[string]string{}
 	must(mount("tmpfs", "/rw", "tmpfs", 0, "mode=755"), "mount /rw")
@@ -235,6 +238,10 @@ func main() {
 		must(mount("/dev", root+"/dev", "", unix.MS_BIND|unix.MS_REC, ""), "dev "+c.Name)
 		_ = mount("shm", secureJoin(root, "/dev/shm"), "tmpfs", 0, "mode=1777")
 		_ = mount("sysfs", secureJoin(root, "/sys"), "sysfs", unix.MS_RDONLY, "")
+		if c.Cgroup != nil {
+			applyCgroup(c.Name, *c.Cgroup)
+		}
+		mountContainerCgroup(root, c.Name)
 		_ = mount("tmpfs", secureJoin(root, "/run"), "tmpfs", 0, "mode=755")
 		_ = mount("tmpfs", secureJoin(root, "/tmp"), "tmpfs", 0, "mode=1777")
 		etc := secureJoin(root, "/etc")
@@ -388,7 +395,12 @@ func main() {
 				delete(probeStop, name)
 			}
 			stopMu.Unlock()
-			emit(Event{Type: "exit", Container: name, Code: code, Msg: terminationMessage(name, code)})
+			ev := Event{Type: "exit", Container: name, Code: code, Msg: terminationMessage(name, code)}
+			if n := oomKills(name); n > oomSeen[name] { // the cgroup's OOM killer ended it
+				oomSeen[name] = n
+				ev.Reason = "OOMKilled"
+			}
+			emit(ev)
 			exitMu.Lock()
 			ch, isInit := exitChans[name]
 			exitMu.Unlock()
@@ -426,10 +438,11 @@ func resolve(root, argv0 string, env []string) string {
 }
 
 type Command struct {
-	Type      string `json:"type"`
-	Container string `json:"container"`
-	Signal    int    `json:"signal"`
-	Grace     int    `json:"grace"`
+	Type      string  `json:"type"`
+	Container string  `json:"container"`
+	Signal    int     `json:"signal"`
+	Grace     int     `json:"grace"`
+	Cgroup    *Cgroup `json:"cgroup,omitempty"` // resize
 }
 
 func commands(conn *os.File) {
@@ -457,6 +470,12 @@ func commands(conn *os.File) {
 				time.Sleep(10 * time.Millisecond)
 			}
 			signalWhere(isSidecar, syscall.Signal(c.Signal))
+		case "resize": // in-place pod resize: new cgroup limits
+			if c.Cgroup != nil {
+				applyCgroup(c.Container, *c.Cgroup)
+			}
+		case "restart-container": // resizePolicy RestartContainer
+			signalWhere(func(n string) bool { return n == c.Container }, syscall.SIGKILL)
 		case "poweroff":
 			unix.Sync()
 			_ = unix.Reboot(unix.LINUX_REBOOT_CMD_POWER_OFF)

@@ -61,18 +61,20 @@ type Backend struct {
 }
 
 type pod struct {
-	images    map[string]*image.Image // container image ref -> resolved image
-	listeners []net.Listener          // hostPort / hostNetwork forwards
-	stopping  atomic.Bool             // set by Stop: exits are final, never CrashLoopBackOff
-	vm        *microvm.VM
-	ip        net.IP
-	dir       string
-	cancel    context.CancelFunc
-	done      chan struct{}
-	names     []string
-	latest    atomic.Pointer[corev1.Pod] // newest pod object from UpdatePod
-	ns        string
-	refresh   chan struct{} // re-render configMap/secret/downwardAPI volumes
+	images        map[string]*image.Image // container image ref -> resolved image
+	listeners     []io.Closer             // hostPort forwards (tcp listeners, udp sockets)
+	stopping      atomic.Bool             // set by Stop: exits are final, never CrashLoopBackOff
+	vm            *microvm.VM
+	ip            net.IP
+	dir           string
+	cancel        context.CancelFunc
+	done          chan struct{}
+	names         []string
+	latest        atomic.Pointer[corev1.Pod] // newest pod object from UpdatePod
+	hnMu          sync.Mutex
+	hostListeners map[string]hostListener // hostNetwork: Mac-side listeners
+	ns            string
+	refresh       chan struct{} // re-render configMap/secret/downwardAPI volumes
 }
 
 func DefaultKernel() string {
@@ -204,19 +206,21 @@ type mspec struct {
 }
 
 type spec struct {
-	Sysctls    map[string]string `json:"sysctls,omitempty"`
-	Search     []string          `json:"search"`
-	MTU        int               `json:"mtu"`
-	IP         string            `json:"ip"`
-	Mask       int               `json:"mask"`
-	GW         string            `json:"gw"`
-	Hostname   string            `json:"hostname"`
-	DNS        []string          `json:"dns"`
-	Hosts      string            `json:"hosts"`
-	Containers []cspec           `json:"containers"`
-	Inits      []cspec           `json:"init_containers,omitempty"`
-	Restart    string            `json:"restart"`
-	Mounts     []mspec           `json:"mounts"`
+	Sysctls     map[string]string `json:"sysctls,omitempty"`
+	Search      []string          `json:"search"`
+	HostNetwork bool              `json:"host_network,omitempty"`
+	NodeIP      string            `json:"node_ip,omitempty"`
+	MTU         int               `json:"mtu"`
+	IP          string            `json:"ip"`
+	Mask        int               `json:"mask"`
+	GW          string            `json:"gw"`
+	Hostname    string            `json:"hostname"`
+	DNS         []string          `json:"dns"`
+	Hosts       string            `json:"hosts"`
+	Containers  []cspec           `json:"containers"`
+	Inits       []cspec           `json:"init_containers,omitempty"`
+	Restart     string            `json:"restart"`
+	Mounts      []mspec           `json:"mounts"`
 }
 
 // PrepareIP reserves the pod's IP early so status.podIP env refs resolve.
@@ -296,6 +300,9 @@ func (b *Backend) buildSpec(p *corev1.Pod, ps *pod) (*spec, []microvm.Share, err
 		sp.Hostname = p.Spec.Hostname
 	}
 	sp.Hosts = hostsFile(p, ps.ip.String(), sp.Hostname)
+	if p.Spec.HostNetwork {
+		sp.HostNetwork, sp.NodeIP = true, b.hostIP
+	}
 	shares := []microvm.Share{{Tag: "pod", Path: ps.dir}}
 	seen := map[string]bool{}
 	restart := string(p.Spec.RestartPolicy)
@@ -708,6 +715,10 @@ func (b *Backend) run(ctx context.Context, p *corev1.Pod, ps *pod) error {
 			case "ready", "unready":
 				want := e.Type == "ready"
 				b.t.Update(p.Namespace, p.Name, func(s *corev1.PodStatus) { rt.SetReady(s, e.Container, want) })
+			case "listeners":
+				if p.Spec.HostNetwork {
+					b.syncHostListeners(p, ps, e.Listeners)
+				}
 			case "init-failed":
 				b.t.Update(p.Namespace, p.Name, func(s *corev1.PodStatus) {
 					rt.SetTerminated(s, e.Container, int32(e.Code), "Error")
@@ -821,6 +832,7 @@ func (b *Backend) Stop(ctx context.Context, p *corev1.Pod) error {
 	for _, l := range ps.listeners {
 		l.Close()
 	}
+	b.closeHostListeners(ps)
 	ps.cancel()
 	<-ps.done
 	b.pnet.Free(ps.ip)

@@ -42,13 +42,21 @@ type Config struct {
 }
 
 type Event struct {
-	Type      string  `json:"type"`
-	Container string  `json:"container,omitempty"`
-	Pid       int     `json:"pid,omitempty"`
-	Code      int     `json:"code,omitempty"`
-	Msg       string  `json:"msg,omitempty"`
-	BootMs    float64 `json:"boot_ms,omitempty"`
-	ReadyMs   float64 `json:"ready_ms,omitempty"`
+	Type      string     `json:"type"`
+	Container string     `json:"container,omitempty"`
+	Pid       int        `json:"pid,omitempty"`
+	Code      int        `json:"code,omitempty"`
+	Msg       string     `json:"msg,omitempty"`
+	Listeners []Listener `json:"listeners,omitempty"` // hostNetwork pods
+	BootMs    float64    `json:"boot_ms,omitempty"`
+	ReadyMs   float64    `json:"ready_ms,omitempty"`
+}
+
+// Listener is a listening socket reported by a hostNetwork pod VM.
+type Listener struct {
+	Proto string `json:"proto"`
+	Addr  string `json:"addr"`
+	Port  int    `json:"port"`
 }
 
 type VM struct {

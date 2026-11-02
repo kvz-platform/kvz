@@ -4,8 +4,6 @@ package microvmrt
 
 import (
 	"context"
-	"fmt"
-	"io"
 	"net"
 	"strconv"
 	"time"
@@ -91,57 +89,34 @@ func (b *Backend) ensureImages(ctx context.Context, p *corev1.Pod, ps *pod) erro
 	}
 }
 
-// forwardHostPorts exposes hostPort mappings (and, for hostNetwork pods, every
-// declared container port) on the Mac, proxied into the pod over the pod
-// network. TCP only.
+// forwardHostPorts exposes hostPort mappings on the Mac (TCP and UDP, on the
+// requested hostIP), proxied into the pod over the pod network. hostNetwork
+// pods are handled dynamically: every socket they listen on is exposed (see
+// hostnet.go).
 func (b *Backend) forwardHostPorts(p *corev1.Pod, ps *pod) {
+	if p.Spec.HostNetwork {
+		return
+	}
 	all := append(append([]corev1.Container{}, p.Spec.InitContainers...), p.Spec.Containers...)
 	for _, c := range all {
 		for _, cp := range c.Ports {
-			if cp.Protocol != "" && cp.Protocol != corev1.ProtocolTCP {
+			if cp.HostPort == 0 {
 				continue
 			}
-			hostPort := int(cp.HostPort)
-			if hostPort == 0 && p.Spec.HostNetwork {
-				hostPort = int(cp.ContainerPort)
-			}
-			if hostPort == 0 {
+			proto := "tcp"
+			if cp.Protocol == corev1.ProtocolUDP {
+				proto = "udp"
+			} else if cp.Protocol == corev1.ProtocolSCTP {
 				continue
 			}
-			addr := ":" + strconv.Itoa(hostPort)
-			if cp.HostIP != "" {
-				addr = net.JoinHostPort(cp.HostIP, strconv.Itoa(hostPort))
-			}
-			ln, err := net.Listen("tcp", addr)
-			if err != nil {
-				klog.ErrorS(err, "hostPort", "pod", rt.Key(p.Namespace, p.Name), "port", hostPort)
-				continue
-			}
-			ps.listeners = append(ps.listeners, ln)
+			bind := net.JoinHostPort(cp.HostIP, strconv.Itoa(int(cp.HostPort)))
 			target := net.JoinHostPort(ps.ip.String(), strconv.Itoa(int(cp.ContainerPort)))
-			go func() {
-				for {
-					conn, err := ln.Accept()
-					if err != nil {
-						return
-					}
-					go func() {
-						defer conn.Close()
-						ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-						up, err := b.pnet.Dial(ctx, target)
-						cancel()
-						if err != nil {
-							return
-						}
-						defer up.Close()
-						done := make(chan struct{}, 2)
-						go func() { io.Copy(up, conn); done <- struct{}{} }()
-						go func() { io.Copy(conn, up); done <- struct{}{} }()
-						<-done
-					}()
-				}
-			}()
+			cl, err := b.exposeOnHost(proto, bind, target)
+			if err != nil {
+				klog.ErrorS(err, "hostPort", "pod", rt.Key(p.Namespace, p.Name), "port", cp.HostPort, "proto", proto)
+				continue
+			}
+			ps.listeners = append(ps.listeners, cl)
 		}
 	}
-	_ = fmt.Sprint
 }

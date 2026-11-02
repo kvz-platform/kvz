@@ -1,79 +1,76 @@
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: light)" srcset="docs/assets/brand-v1/readme-banner-light-1280x320.svg">
-    <img alt="kvz — native macOS kubernetes" src="docs/assets/brand-v1/readme-banner-1280x320.svg" width="100%">
-  </picture>
+  <img alt="kvz: native macOS Kubernetes. The control plane runs directly on macOS, one pod to Ready in 99 ms, Linux, macOS and native pods in one cluster." src="docs/assets/kvz-overview.png" width="100%">
 </p>
 
-# kvz: native-macOS Kubernetes
+# kvz
 
-A k3s-style, single-binary Kubernetes distribution that runs **natively on
-macOS**. The control plane has no Linux VM: etcd, kube-apiserver,
-controller-manager and scheduler run in one darwin process. Pods run on three
-native runtimes:
+**Kubernetes that runs natively on your Mac.** kvz is a single binary, in the
+spirit of k3s. The whole control plane (etcd, the API server, the scheduler and
+the controllers) runs as one ordinary macOS process, with no Linux VM
+underneath. Your pods run as:
 
-| `runtimeClassName` | What a pod is | Built on |
-|---|---|---|
-| `linux` (default) | **its own cold-booted Linux microVM**, ready in ~90–100 ms | kvz's microVM monitor on Virtualization.framework, kvz kernel (8.5 MB), Go PID 1, virtiofs + tmpfs overlay |
-| `macos` | a full macOS VM (container 0), exec over SSH | Virtualization.framework; APFS `clonefile` disk (50 GB in under 1 ms) |
-| `darwin` | native macOS processes | fork/exec, per-pod dir, process-group kill |
-| `apple` | a container through Apple's `container` daemon (v1 runtime) | Apple Containerization |
+- **Linux pods.** Each one is its own lightweight VM, ready in about 100 ms.
+- **macOS pods.** A full macOS virtual machine you can `kubectl exec` into.
+- **Native pods.** Plain macOS processes, for Xcode builds, code signing or
+  anything that needs the real Mac.
 
-Pod networking is kvz's own: an in-process L2 switch with gVisor netstack
-gateway/DNS, ClusterIP Services (DNAT in the switch), cluster DNS, and
-LoadBalancer/NodePort on the host. It uses no vmnet interfaces.
-Extra Macs join as nodes with a k3s-style token.
+You use it with the same `kubectl` and YAML you already know.
 
-## Quickstart
+## Quick start
+
+You need an Apple Silicon Mac running macOS 26 or later, plus Go and Xcode's
+command line tools.
 
 ```sh
-make build                       # builds + ad-hoc signs bin/kvz (needs the virtualization entitlement)
-./bin/kvz server                 # prints KUBECONFIG and a join command
-export KUBECONFIG=~/.kvz/kubeconfig.yaml
-kubectl run web --image=nginx:alpine                       # Linux micro-VM
-kubectl apply -f - <<'EOF'
-apiVersion: v1
-kind: Pod
-metadata: {name: mac}
-spec:
-  runtimeClassName: macos
-  containers: [{name: vm, image: ghcr.io/cirruslabs/macos-tahoe-base:latest}]
-EOF
-kubectl exec mac -- sw_vers                                # runs inside the macOS guest
-
-# on another Mac
-kvz agent --server https://<server-ip>:6443 --token K10…::…
+git clone https://github.com/GrowlyX/kvz && cd kvz
+make build                      # builds and signs bin/kvz
+./kernel/build.sh               # builds the 8.5 MB pod kernel into ~/.kvz/kernel
+./bin/kvz server                # starts the cluster and prints how to connect
 ```
 
-Requirements: Apple Silicon, macOS 26+. The `linux` runtime needs the kvz
-kernel (`kernel/build.sh` → `~/.kvz/kernel/Image`; it falls back to Apple's
-`container` kernel if present). The `macos` runtime needs a tart-format VM
-bundle; OCI refs are pulled with `tart`.
+In a second terminal:
 
-## Headline numbers (M4 Mac mini, median of 3; see [docs/BENCHMARKS.md](docs/BENCHMARKS.md))
+```sh
+export KUBECONFIG=~/.kvz/kubeconfig.yaml
+kubectl run web --image=nginx:alpine
+kubectl get pods
+```
 
-| | kvz | k3s in Lima | Apple `container cluster` |
-|---|---|---|---|
-| restart → API ready | **1.7 s** | 9.3 s | 58 s (create) |
-| idle CPU / memory | **1.6 % / 257 MB** | 20 % / 3.2 GB | 26 % / 2.5 GB |
-| 1 nginx pod → Ready | **99 ms** | 421 ms | 859 ms |
-| 20 nginx pods → all Ready | **0.44 s** (Studio 0.23 s) | 1.30 s | 0.88 s |
-| 50 nginx pods → all Ready | **1.5 s** (Studio 0.62 s) | 4.5 s | 4.2 s |
-| memory with 20 pods | **1.6 GB** | 3.8 GB | 3.0 GB |
-| delete 20 pods | **0.11 s** | 0.81 s | 1.18 s |
-| API creates/s | **9.6k** | 3.2k | 8.0k |
-| pod-to-pod TCP | 49–52 Gbps | 84 Gbps | 86 Gbps |
-| native macOS process / macOS VM pods | **yes** | no | no |
+That pod is a fresh Linux VM. The [getting started guide](docs/getting-started.md)
+walks through macOS and native pods, adding more Macs, and running kvz as a
+background service.
 
-Every kvz Linux pod is a fresh VM: no pools, snapshots or pre-started pods.
-The one loss, pod-to-pod bandwidth, is the cost of that isolation.
+## How it compares
 
-## Docs
-* [docs/REPORT.md](docs/REPORT.md): the overnight optimization report (12 s → 0.25 s and everything else)
-* [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): how it works and what was needed to embed k8s on darwin
-* [docs/BENCHMARKS.md](docs/BENCHMARKS.md): full methodology and results across 4 Macs
-* `results/`: raw JSONL and the generated `SUMMARY.md`
+<p align="center">
+  <img alt="kvz benchmark results against k3s in Lima and Apple container cluster" src="docs/assets/kvz-benchmarks.png" width="100%">
+</p>
+
+kvz is measured against **k3s in Lima** and **Apple's `container cluster`** on
+three M4 Mac minis and a Mac Studio. It's faster on every lifecycle metric we
+measured: startup, idle cost, API throughput, pod start, bursts and teardown.
+It's slower at pod-to-pod bandwidth, because every pod is its own VM. No VM
+pools, snapshots or pre-started pods are used to get these numbers.
+
+Full tables and method: [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
+
+## Documentation
+
+| Guide | What's in it |
+|---|---|
+| [Getting started](docs/getting-started.md) | Install, run your first pods, add Macs, run as a service |
+| [Runtimes](docs/runtimes.md) | Linux, macOS and native pods: how each works and when to use it |
+| [Kubernetes features](docs/kubernetes-features.md) | What works today, and the known limits |
+| [Operations](docs/operations.md) | Flags, files, snapshots, upgrades and uninstalling |
+| [Architecture](docs/ARCHITECTURE.md) | How kvz embeds Kubernetes on macOS |
+| [Benchmarks](docs/BENCHMARKS.md) | Every result, per machine, with the method |
+| [Optimization report](docs/REPORT.md) | How Linux pods went from 12 s to 0.25 s |
 
 ## Status
-Prototype. Not implemented yet: cross-node pod networking (each node has its
-own pod network), NetworkPolicy, attach stdin, stats summary.
+
+kvz is a prototype. It passes the Sonobuoy quick conformance check and runs
+real workloads (Deployments, StatefulSets, Jobs, Services, Ingress, volumes),
+but it's young. Please don't run production on it yet.
+
+The brand assets (logos, banners, social images) are in
+[docs/assets/brand-v1](docs/assets/brand-v1).

@@ -399,7 +399,7 @@ func Run(ctx context.Context, o Options) error {
 		cidr = "10.88.0.0/16"
 	}
 	mtu, _ := strconv.Atoi(os.Getenv("KVZ_POD_MTU"))
-	pn, err := podnet.New(cidr, mtu)
+	pn, err := podnet.New(cidr, mtu, o.NodeIP)
 	if err != nil {
 		return fmt.Errorf("pod network: %w", err)
 	}

@@ -60,19 +60,21 @@ type Container struct {
 }
 
 type Spec struct {
-	Search     []string          `json:"search"`
-	MTU        int               `json:"mtu"`
-	IP         string            `json:"ip"`
-	Mask       int               `json:"mask"`
-	GW         string            `json:"gw"`
-	Hostname   string            `json:"hostname"`
-	DNS        []string          `json:"dns"`
-	Hosts      string            `json:"hosts"`
-	Containers []Container       `json:"containers"`
-	Inits      []Container       `json:"init_containers,omitempty"`
-	Restart    string            `json:"restart"` // pod restartPolicy
-	Mounts     []Mount           `json:"mounts"`
-	Sysctls    map[string]string `json:"sysctls,omitempty"`
+	Search      []string          `json:"search"`
+	HostNetwork bool              `json:"host_network,omitempty"`
+	NodeIP      string            `json:"node_ip,omitempty"`
+	MTU         int               `json:"mtu"`
+	IP          string            `json:"ip"`
+	Mask        int               `json:"mask"`
+	GW          string            `json:"gw"`
+	Hostname    string            `json:"hostname"`
+	DNS         []string          `json:"dns"`
+	Hosts       string            `json:"hosts"`
+	Containers  []Container       `json:"containers"`
+	Inits       []Container       `json:"init_containers,omitempty"`
+	Restart     string            `json:"restart"` // pod restartPolicy
+	Mounts      []Mount           `json:"mounts"`
+	Sysctls     map[string]string `json:"sysctls,omitempty"`
 }
 
 type Mount struct {
@@ -86,13 +88,14 @@ type Mount struct {
 }
 
 type Event struct {
-	Type      string  `json:"type"`
-	Container string  `json:"container,omitempty"`
-	Pid       int     `json:"pid,omitempty"`
-	Code      int     `json:"code,omitempty"`
-	Msg       string  `json:"msg,omitempty"`
-	BootMs    float64 `json:"boot_ms,omitempty"` // CLOCK_BOOTTIME when init started
-	ReadyMs   float64 `json:"ready_ms,omitempty"`
+	Type      string     `json:"type"`
+	Container string     `json:"container,omitempty"`
+	Pid       int        `json:"pid,omitempty"`
+	Code      int        `json:"code,omitempty"`
+	Msg       string     `json:"msg,omitempty"`
+	Listeners []Listener `json:"listeners,omitempty"` // hostNetwork pods
+	BootMs    float64    `json:"boot_ms,omitempty"`   // CLOCK_BOOTTIME when init started
+	ReadyMs   float64    `json:"ready_ms,omitempty"`
 }
 
 var (
@@ -276,6 +279,13 @@ func main() {
 		}
 	}
 	must(<-netDone, "network")
+	if spec.HostNetwork && spec.NodeIP != "" {
+		if hn, err := setupHostNetwork(spec.NodeIP); err != nil {
+			hostNetErr = err
+		} else {
+			hostNetMode = hn
+		}
+	}
 	for k, v := range spec.Sysctls {
 		p := "/proc/sys/" + strings.ReplaceAll(k, ".", "/")
 		if err := os.WriteFile(p, []byte(v), 0o644); err != nil {
@@ -287,6 +297,12 @@ func main() {
 		evOut = conn
 	}
 	emit(Event{Type: "hello", BootMs: t0, ReadyMs: bootMs()})
+	if hostNetErr != nil {
+		emit(Event{Type: "error", Msg: "hostNetwork: " + hostNetErr.Error()})
+	}
+	if hostNetMode != nil { // after the event channel is up: no change is lost
+		go hostNetMode.watchListeners()
+	}
 
 	// Init containers (sequential; sidecars keep running), then app containers.
 	go func() {

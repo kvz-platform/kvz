@@ -14,6 +14,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/adapters/gonet"
+	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"k8s.io/klog/v2"
 	"net"
 	"net/http/httptest"
@@ -50,7 +53,17 @@ func ip2u(ip net.IP) uint32 {
 func u2ip(u uint32) net.IP { return net.IPv4(byte(u>>24), byte(u>>16), byte(u>>8), byte(u)).To4() }
 
 // New creates the pod network for one node.
-func New(cidr string, mtu int) (*Net, error) {
+// Virtual IPs the netstack forwards to the Mac itself: HostLoopIP reaches the
+// Mac's 127.0.0.1 and HostNodeIP its node address (hostNetwork pods send
+// their loopback and node-IP traffic there).
+const (
+	HostLoopIP = "192.0.2.1"
+	HostNodeIP = "192.0.2.2"
+)
+
+// New creates the pod network for one node. nodeIP (optional) is the Mac's
+// node address, reachable from pods at HostNodeIP.
+func New(cidr string, mtu int, nodeIP ...string) (*Net, error) {
 	_, sn, err := net.ParseCIDR(cidr)
 	if err != nil {
 		return nil, err
@@ -70,7 +83,7 @@ func New(cidr string, mtu int) (*Net, error) {
 		GatewayIP:         gw.String(),
 		GatewayMacAddress: "5a:94:ef:e4:0c:dd",
 		DNS:               []types.Zone{},
-		NAT:               map[string]string{},
+		NAT:               hostNAT(nodeIP),
 		Forwards:          map[string]string{},
 		DHCPStaticLeases:  map[string]string{},
 		GatewayVirtualIPs: []string{gw.String()},
@@ -329,4 +342,25 @@ func (n *Net) SetPolicies(p map[string]*PodPolicy) {
 		}
 	}
 	n.sw.pol.set(m)
+}
+
+func hostNAT(nodeIP []string) map[string]string {
+	m := map[string]string{HostLoopIP: "127.0.0.1"}
+	if len(nodeIP) > 0 && nodeIP[0] != "" {
+		m[HostNodeIP] = nodeIP[0]
+	}
+	return m
+}
+
+// DialUDP opens a UDP "connection" to a pod IP:port through the netstack.
+func (n *Net) DialUDP(addr string) (net.Conn, error) {
+	st, err := netstack(n.vn)
+	if err != nil {
+		return nil, err
+	}
+	ua, err := net.ResolveUDPAddr("udp", addr)
+	if err != nil {
+		return nil, err
+	}
+	return gonet.DialUDP(st, nil, &tcpip.FullAddress{NIC: 1, Addr: tcpip.AddrFrom4Slice(ua.IP.To4()), Port: uint16(ua.Port)}, ipv4.ProtocolNumber)
 }

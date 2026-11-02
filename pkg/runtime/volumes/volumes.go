@@ -7,10 +7,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
+	"strings"
 	"time"
 
 	authv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	corev1listers "k8s.io/client-go/listers/core/v1"
@@ -75,6 +79,10 @@ func (m *Materializer) Materialize(pod *corev1.Pod, podDir string) (map[string][
 			if err := write(dst, s.Data, v.Secret.Items); err != nil {
 				return nil, err
 			}
+		case v.DownwardAPI != nil:
+			if err := write(dst, downwardFiles(pod, v.DownwardAPI.Items), nil); err != nil {
+				return nil, err
+			}
 		case v.Projected != nil:
 			files, err := m.projected(pod, v.Projected)
 			if err != nil {
@@ -126,7 +134,14 @@ func write(dir string, files map[string][]byte, items []corev1.KeyToPath) error 
 		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 			return err
 		}
-		if err := os.WriteFile(p, b, 0o644); err != nil {
+		if old, err := os.ReadFile(p); err == nil && string(old) == string(b) {
+			continue // unchanged
+		}
+		tmp := p + ".kvz-tmp"
+		if err := os.WriteFile(tmp, b, 0o644); err != nil {
+			return err
+		}
+		if err := os.Rename(tmp, p); err != nil { // atomic for readers in the guest
 			return err
 		}
 	}
@@ -266,4 +281,88 @@ func (m *Materializer) pvcPath(ns, claim string) (string, error) {
 		return "", err
 	}
 	return path, nil
+}
+
+// downwardFiles renders downwardAPI volume items.
+func downwardFiles(pod *corev1.Pod, items []corev1.DownwardAPIVolumeFile) map[string][]byte {
+	out := map[string][]byte{}
+	kv := func(m map[string]string) []byte {
+		keys := make([]string, 0, len(m))
+		for k := range m {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		var b strings.Builder
+		for _, k := range keys {
+			b.WriteString(k + "=" + strconv.Quote(m[k]) + "\n")
+		}
+		return []byte(b.String())
+	}
+	for _, it := range items {
+		switch {
+		case it.FieldRef != nil:
+			switch it.FieldRef.FieldPath {
+			case "metadata.name":
+				out[it.Path] = []byte(pod.Name)
+			case "metadata.namespace":
+				out[it.Path] = []byte(pod.Namespace)
+			case "metadata.uid":
+				out[it.Path] = []byte(pod.UID)
+			case "metadata.labels":
+				out[it.Path] = kv(pod.Labels)
+			case "metadata.annotations":
+				out[it.Path] = kv(pod.Annotations)
+			}
+		case it.ResourceFieldRef != nil:
+			for _, c := range pod.Spec.Containers {
+				if it.ResourceFieldRef.ContainerName != "" && c.Name != it.ResourceFieldRef.ContainerName {
+					continue
+				}
+				res := it.ResourceFieldRef.Resource
+				var q resource.Quantity
+				var ok bool
+				if strings.HasPrefix(res, "limits.") {
+					q, ok = c.Resources.Limits[corev1.ResourceName(strings.TrimPrefix(res, "limits."))]
+				} else {
+					q, ok = c.Resources.Requests[corev1.ResourceName(strings.TrimPrefix(res, "requests."))]
+				}
+				if ok {
+					div := it.ResourceFieldRef.Divisor
+					if div.IsZero() {
+						div = resource.MustParse("1")
+					}
+					out[it.Path] = []byte(strconv.FormatInt((q.MilliValue()+div.MilliValue()-1)/div.MilliValue(), 10))
+				}
+				break
+			}
+		}
+	}
+	return out
+}
+
+// Refresh rewrites configMap, secret and downwardAPI volumes of a running pod
+// (the kubelet's periodic volume sync), so mounted content follows updates.
+func (m *Materializer) Refresh(pod *corev1.Pod, podDir string) {
+	for _, v := range pod.Spec.Volumes {
+		dst := filepath.Join(podDir, "volumes", v.Name)
+		switch {
+		case v.ConfigMap != nil && m.ConfigMaps != nil:
+			if cm, err := m.ConfigMaps.ConfigMaps(pod.Namespace).Get(v.ConfigMap.Name); err == nil {
+				files := map[string][]byte{}
+				for k, s := range cm.Data {
+					files[k] = []byte(s)
+				}
+				for k, b := range cm.BinaryData {
+					files[k] = b
+				}
+				_ = write(dst, files, v.ConfigMap.Items)
+			}
+		case v.Secret != nil && m.Secrets != nil:
+			if s, err := m.Secrets.Secrets(pod.Namespace).Get(v.Secret.SecretName); err == nil {
+				_ = write(dst, s.Data, v.Secret.Items)
+			}
+		case v.DownwardAPI != nil:
+			_ = write(dst, downwardFiles(pod, v.DownwardAPI.Items), nil)
+		}
+	}
 }

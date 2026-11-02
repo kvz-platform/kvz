@@ -12,6 +12,7 @@ import (
 	"github.com/virtual-kubelet/virtual-kubelet/node/api"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/tools/record"
 )
 
 // Backend runs pods of one RuntimeClass handler.
@@ -33,6 +34,18 @@ type Tracker struct {
 	mu     sync.RWMutex
 	pods   map[string]*corev1.Pod
 	notify func(*corev1.Pod)
+	// Recorder emits kubelet-style pod events (set by the node).
+	Recorder record.EventRecorder
+}
+
+// Event records a pod event (Normal/Warning) like the kubelet does.
+func (t *Tracker) Event(ns, name, typ, reason, msgFmt string, args ...any) {
+	if t.Recorder == nil {
+		return
+	}
+	if p := t.Get(ns, name); p != nil {
+		t.Recorder.Eventf(p, typ, reason, msgFmt, args...)
+	}
 }
 
 func NewTracker() *Tracker { return &Tracker{pods: map[string]*corev1.Pod{}} }

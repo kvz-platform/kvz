@@ -49,6 +49,7 @@ func runVK(ctx context.Context, c vkConfig, pc nodeutil.ProviderConfig, podInf i
 
 	eb := record.NewBroadcaster()
 	rec := eb.NewRecorder(scheme.Scheme, corev1.EventSource{Component: path.Join(c.name, "pod-controller")})
+	c.provider.t.Recorder = eb.NewRecorder(scheme.Scheme, corev1.EventSource{Component: "kubelet", Host: c.name})
 	eb.StartRecordingToSink(&corev1client.EventSinkImpl{Interface: c.client.CoreV1().Events(corev1.NamespaceAll)})
 	defer eb.Shutdown()
 

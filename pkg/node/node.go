@@ -43,7 +43,7 @@ import (
 	"github.com/GrowlyX/kvz/pkg/runtime/volumes"
 )
 
-const Version = "v1.35.6-kvz"
+const Version = "v1.35.6+kvz"
 
 type Options struct {
 	Name           string

@@ -46,10 +46,21 @@ func (b *Backend) ensureImages(ctx context.Context, p *corev1.Pod, ps *pod) erro
 			if policy == "" {
 				policy = image.PullIfNotPresent
 			}
+			t0 := time.Now()
+			fresh := policy == image.PullAlways || !b.images.Has(c.Image)
+			if fresh {
+				b.t.Event(p.Namespace, p.Name, corev1.EventTypeNormal, "Pulling", "Pulling image %q", c.Image)
+			}
 			im, err := b.images.Ensure(c.Image, policy, kc)
 			if err != nil {
 				failed, lastErr = append(failed, c.Name), err
+				b.t.Event(p.Namespace, p.Name, corev1.EventTypeWarning, "Failed", "Failed to pull image %q: %v", c.Image, err)
 				continue
+			}
+			if fresh {
+				b.t.Event(p.Namespace, p.Name, corev1.EventTypeNormal, "Pulled", "Successfully pulled image %q in %s", c.Image, time.Since(t0).Round(time.Millisecond))
+			} else {
+				b.t.Event(p.Namespace, p.Name, corev1.EventTypeNormal, "Pulled", "Container image %q already present on machine", c.Image)
 			}
 			ps.images[c.Image] = im
 		}
@@ -66,6 +77,9 @@ func (b *Backend) ensureImages(ctx context.Context, p *corev1.Pod, ps *pod) erro
 				rt.SetWaiting(s, n, reason, lastErr.Error())
 			}
 		})
+		if reason == "ImagePullBackOff" {
+			b.t.Event(p.Namespace, p.Name, corev1.EventTypeNormal, "BackOff", "Back-off pulling image")
+		}
 		select {
 		case <-ctx.Done():
 			return ctx.Err()

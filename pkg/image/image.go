@@ -97,6 +97,9 @@ func (s *Store) Ensure(ref, policy string, kc authn.Keychain) (*Image, error) {
 	return s.pullLocked(ref, kc, "")
 }
 
+// Has reports whether ref is already in the store.
+func (s *Store) Has(ref string) bool { return s.local(ref) != nil }
+
 func (s *Store) local(ref string) *Image {
 	s.mu.Lock()
 	im := s.mem[ref]

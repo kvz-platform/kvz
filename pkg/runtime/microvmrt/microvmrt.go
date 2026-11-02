@@ -440,6 +440,16 @@ func (b *Backend) run(ctx context.Context, p *corev1.Pod, ps *pod) error {
 	ps.vm = vm
 	b.mu.Unlock()
 	b.forwardHostPorts(p, ps)
+	go func() { // keep configMap/secret/downwardAPI volumes current, like the kubelet
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(30 * time.Second):
+				b.vols.Refresh(p, ps.dir)
+			}
+		}
+	}()
 	for {
 		select {
 		case <-ctx.Done():
@@ -466,6 +476,8 @@ func (b *Backend) run(ctx context.Context, p *corev1.Pod, ps *pod) error {
 				if sidecar {
 					id = rt.SidecarIDPrefix + fmt.Sprintf("%s/%d", p.UID, e.Pid)
 				}
+				b.t.Event(p.Namespace, p.Name, corev1.EventTypeNormal, "Created", "Created container %s", e.Container)
+				b.t.Event(p.Namespace, p.Name, corev1.EventTypeNormal, "Started", "Started container %s", e.Container)
 				b.t.Update(p.Namespace, p.Name, func(s *corev1.PodStatus) {
 					for _, cs := range append(append([]corev1.ContainerStatus{}, s.ContainerStatuses...), s.InitContainerStatuses...) {
 						if cs.Name == e.Container && (cs.State.Terminated != nil || cs.State.Waiting != nil && cs.State.Waiting.Reason == "CrashLoopBackOff") {
@@ -485,6 +497,11 @@ func (b *Backend) run(ctx context.Context, p *corev1.Pod, ps *pod) error {
 				})
 			case "probe":
 				klog.InfoS("container probe/hook", "pod", rt.Key(p.Namespace, p.Name), "container", e.Container, "msg", e.Msg)
+				reason := "Unhealthy"
+				if strings.HasPrefix(e.Msg, "postStart") {
+					reason = "FailedPostStartHook"
+				}
+				b.t.Event(p.Namespace, p.Name, corev1.EventTypeWarning, reason, "Container %s: %s", e.Container, e.Msg)
 			case "exit":
 				code := int32(e.Code)
 				reason := "Completed"
@@ -508,6 +525,9 @@ func (b *Backend) run(ctx context.Context, p *corev1.Pod, ps *pod) error {
 						}
 					case rt.WillRestart(p.Spec.RestartPolicy, code):
 						rt.SetCrashLoop(s, e.Container, code, reason)
+						if code != 0 {
+							go b.t.Event(p.Namespace, p.Name, corev1.EventTypeWarning, "BackOff", "Back-off restarting failed container %s", e.Container)
+						}
 					default:
 						rt.SetTerminated(s, e.Container, code, reason)
 					}
@@ -529,6 +549,9 @@ func (b *Backend) Stop(ctx context.Context, p *corev1.Pod) error {
 		return nil
 	}
 	ps.stopping.Store(true)
+	for _, n := range ps.names {
+		b.t.Event(p.Namespace, p.Name, corev1.EventTypeNormal, "Killing", "Stopping container %s", n)
+	}
 	b.mu.Lock()
 	vm := ps.vm
 	b.mu.Unlock()

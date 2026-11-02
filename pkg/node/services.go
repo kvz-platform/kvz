@@ -62,7 +62,15 @@ func runServiceProxy(ctx context.Context, f informers.SharedInformerFactory, pn 
 		for _, svc := range svcs {
 			eps := bySvc[svc.Namespace+"/"+svc.Name]
 			if svc.Spec.ClusterIP == "" || svc.Spec.ClusterIP == corev1.ClusterIPNone {
-				// headless: DNS to the first ready endpoint
+				// headless: per-endpoint hostname records (StatefulSet pod DNS)
+				for _, s := range eps {
+					for _, e := range s.Endpoints {
+						if e.Hostname != nil && *e.Hostname != "" && len(e.Addresses) > 0 {
+							pn.AddDNS("svc.cluster.local.", *e.Hostname+"."+svc.Name+"."+svc.Namespace, net.ParseIP(e.Addresses[0]))
+						}
+					}
+				}
+				// and the service name to the first ready endpoint
 				for _, s := range eps {
 					for _, e := range s.Endpoints {
 						if ready(e) && len(e.Addresses) > 0 {

@@ -94,6 +94,7 @@ func New(cidr string, mtu int) (*Net, error) {
 		}
 		n.nat = newNATTable(svcCIDR, gwmac)
 		n.sw = newFastSwitch(n.nat)
+		n.sw.pol = newPolicyTable(gw)
 		n.sw.add(up[0], true, [4]byte{}, [6]byte{})
 		f := os.NewFile(uintptr(up[1]), "podnet-uplink")
 		conn, err := net.FileConn(f)
@@ -276,4 +277,20 @@ func (n *Net) SetRoutes(routes, endpoints map[string]string) {
 	if n.sw != nil && n.sw.ov != nil {
 		n.sw.ov.set(routes, endpoints)
 	}
+}
+
+// SetPolicies installs compiled NetworkPolicies keyed by local pod IP.
+func (n *Net) SetPolicies(p map[string]*PodPolicy) {
+	if n.sw == nil || n.sw.pol == nil {
+		return
+	}
+	m := map[[4]byte]*PodPolicy{}
+	for ip, pp := range p {
+		if v4 := net.ParseIP(ip).To4(); v4 != nil {
+			var k [4]byte
+			copy(k[:], v4)
+			m[k] = pp
+		}
+	}
+	n.sw.pol.set(m)
 }

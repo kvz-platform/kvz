@@ -459,6 +459,7 @@ func Run(ctx context.Context, o Options) error {
 	spec.Spec.PodCIDRs = []string{cidr}
 	spec.Annotations = map[string]string{"kvz.dev/pod-cidr": cidr, "kvz.dev/overlay-endpoint": overlayEP}
 	go runServiceProxy(ctx, informers.NewSharedInformerFactory(cs, 10*time.Minute), pn)
+	go runNetworkPolicy(ctx, informers.NewSharedInformerFactory(cs, 10*time.Minute), o.Name, pn)
 	klog.InfoS("starting kvz node", "name", o.Name, "ip", o.NodeIP, "backends", o.Backends)
 	return runVK(ctx, vkConfig{name: o.Name, client: cs, spec: spec, provider: p, listenAddr: fmt.Sprintf(":%d", o.ListenPort),
 		tlsConfig: tlsCfg, handler: mux, workers: o.Workers}, pc, podInf, scmInf)

@@ -20,6 +20,13 @@ type fastSwitch struct {
 	ipMAC  map[[4]byte][6]byte // pod IP -> MAC (registered at attach)
 	nat    *natTable
 	ov     *overlay
+	pol    *policyTable
+}
+
+// policyOK enforces NetworkPolicy: egress on the source node, ingress on the
+// destination node (frames from the overlay were egress-checked at their source).
+func (s *fastSwitch) policyOK(p *swPort, frame []byte) bool {
+	return s.pol == nil || s.pol.check(frame, p != overlayPort, true)
 }
 
 type swPort struct {
@@ -114,6 +121,9 @@ func (s *fastSwitch) handle(p *swPort, frame []byte) {
 	}
 	if s.nat != nil && dst[0]&1 == 0 {
 		if hit, dmac, viaUp := s.nat.outbound(frame, s.macOf); hit {
+			if !s.policyOK(p, frame) {
+				return
+			}
 			if s.routeRemote(frame) {
 				return
 			}
@@ -139,6 +149,9 @@ func (s *fastSwitch) handle(p *swPort, frame []byte) {
 		if p != overlayPort {
 			s.flood(p, frame)
 		}
+		return
+	}
+	if !s.policyOK(p, frame) {
 		return
 	}
 	if p != overlayPort && s.routeRemote(frame) {

@@ -1,0 +1,115 @@
+name: CI
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  GO_VERSION: "1.25"
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+      - uses: actions/checkout@v6
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.8.0
+          args: --timeout=15m --config=.golangci.yml
+          skip-cache: true
+
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - uses: actions/checkout@v6
+      - name: Run Tests
+        run: make test
+
+  env-tests:
+    name: Envtest Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - uses: actions/checkout@v6
+      - name: Run Tests
+        run: make envtest
+
+  e2e:
+    name: E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CHANGE_MINIKUBE_NONE_USER: true
+      KUBERNETES_VERSION: v1.34
+      MINIKUBE_HOME: /home/runner
+      MINIKUBE_VERSION: v1.37.0
+      MINIKUBE_WANTUPDATENOTIFICATION: false
+      MINIKUBE_WANTREPORTERRORPROMPT: false
+      SKAFFOLD_VERSION: v2.13.2
+      GO111MODULE: "on"
+
+    steps:
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: Checkout repository
+        uses: actions/checkout@v6
+      - name: Install Skaffold
+        run: |
+          curl -sLo skaffold https://storage.googleapis.com/skaffold/releases/${SKAFFOLD_VERSION}/skaffold-linux-amd64
+          chmod +x skaffold
+          sudo mv skaffold /usr/local/bin/
+          echo /usr/local/bin >> $GITHUB_PATH
+      - name: Install Minikube dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y apt-transport-https curl
+          echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/${KUBERNETES_VERSION}/deb/ /" | sudo tee /etc/apt/sources.list.d/kubernetes.list
+          curl -fsSL https://pkgs.k8s.io/core:/stable:/${KUBERNETES_VERSION}/deb/Release.key | sudo gpg --no-tty --yes --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+          sudo apt-get update
+          sudo apt-get remove -y containerd.io containerd
+          sudo apt-get install -y kubectl docker.io
+      - name: Install Minikube
+        run: |
+          curl -sLo minikube https://storage.googleapis.com/minikube/releases/${MINIKUBE_VERSION}/minikube-linux-amd64
+          chmod +x minikube
+          sudo mv minikube /usr/local/bin/
+      - name: Start Minikube
+        run: |
+          sudo usermod -aG docker $USER && newgrp docker
+          minikube start --vm-driver=docker --cpus 2 --memory 2048 --kubernetes-version=${KUBERNETES_VERSION}
+      - name: Wait for Minikube
+        run: |
+          JSONPATH='{range .items[*]}{@.metadata.name}:{range @.status.conditions[*]}{@.type}={@.status};{end}{end}';
+          until kubectl get nodes -o jsonpath="$JSONPATH" 2>&1 | grep -q "Ready=True"; do
+            sleep 1;
+          done
+      - name: Run Tests
+        run: make e2e

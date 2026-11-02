@@ -208,3 +208,5 @@ require (
 )
 
 replace github.com/Code-Hex/vz/v3 => ./third_party/vz
+
+replace github.com/virtual-kubelet/virtual-kubelet => ./third_party/virtual-kubelet

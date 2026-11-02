@@ -392,6 +392,11 @@ func (b *Backend) Stop(ctx context.Context, p *corev1.Pod) error {
 	b.mu.Lock()
 	vm := ps.vm
 	b.mu.Unlock()
+	t0 := time.Now()
+	var tExit, tStop time.Duration
+	defer func() {
+		klog.InfoS("microvm pod stopped", "pod", key, "exit", tExit, "vmStop", tStop, "total", time.Since(t0))
+	}()
 	if vm != nil {
 		grace := 1 * time.Second
 		if p.Spec.TerminationGracePeriodSeconds != nil {
@@ -425,7 +430,9 @@ func (b *Backend) Stop(ctx context.Context, p *corev1.Pod) error {
 				}
 			}
 		}
+		tExit = time.Since(t0)
 		_ = vm.Stop()
+		tStop = time.Since(t0)
 	}
 	ps.cancel()
 	<-ps.done

@@ -18,23 +18,22 @@ Full tables: [`results/SUMMARY.md`](../results/SUMMARY.md). Charts:
 
 ## 1. Headline (M4 Mac mini, median of 3 machines; Studio in brackets)
 
-See the final table in `BENCHMARKS.md` (generated from the last full run). The
-shape of the result:
+From the final full run (`BENCHMARKS.md` has every metric):
 
 | | kvz | k3s in Lima | Apple container cluster |
 |---|---|---|---|
-| restart → API ready | **~2 s** | ~9.3 s | ~58 s (create) |
-| idle CPU / memory | **~1.5 % / ~250 MB** | 20 % / 3.2 GB | 26 % / 2.5 GB |
-| API creates/s | **~9.4k** [15.7k] | 3.2k [4.5k] | 8.0k [8.8k] |
-| create → watch p50 | **0.42 ms** | 0.84 ms | 0.52 ms |
-| 1 nginx pod → Ready | **~90–105 ms** | 421 ms | 859 ms |
-| 20 nginx pods → all Ready | **0.4–0.7 s** [0.25 s] | 1.3 s [0.97 s] | 0.88 s [0.93 s] |
-| 50 nginx pods → all Ready | **~1.3 s** [0.56 s] | 4.5 s | 4.2 s |
-| host memory with 20 pods | **~1.6 GB** | 3.8 GB | 3.0 GB |
-| delete 20 pods | **~0.1 s** [0.05 s] | 0.8 s | 1.2 s |
+| restart → API ready | **1.7 s** [2.0 s] | 9.3 s | 58 s (create) |
+| idle CPU / memory | **1.6 % / 257 MB** | 20 % / 3.2 GB | 26 % / 2.5 GB |
+| API creates/s | **9.6k** [14.5k] | 3.2k [4.5k] | 8.0k [8.8k] |
+| create → watch p50 | **0.40 ms** | 0.84 ms | 0.52 ms |
+| 1 nginx pod → Ready | **99 ms** [94 ms] | 421 ms | 859 ms |
+| 20 nginx pods → all Ready | **0.44 s** [0.23 s] | 1.30 s [0.97 s] | 0.88 s [0.93 s] |
+| 50 nginx pods → all Ready | **1.51 s** [0.62 s] | 4.48 s | 4.20 s |
+| host memory with 20 pods | **1.56 GB** | 3.77 GB | 3.01 GB |
+| delete 20 pods | **0.11 s** [0.06 s] | 0.81 s | 1.18 s |
 | `kubectl run --rm -i` round trip | **0.12 s** [Studio] | 2.0 s | n/a |
-| pod-to-pod TCP, 1 stream | 30–54 Gbps | **80–84 Gbps** | **86 Gbps** |
-| native macOS process pod → Ready | **12–50 ms** | n/a | n/a |
+| pod-to-pod TCP, 1 stream | 33–52 Gbps [38.5] | **84 Gbps** [80] | **86 Gbps** |
+| native macOS process pod → Ready | **12–46 ms** | n/a | n/a |
 | macOS VM pod → SSH-ready | **13–20 s** | n/a | n/a |
 
 ## 2. What changed tonight: from 12 s to 0.25 s
@@ -133,7 +132,12 @@ Raw VM path (no Kubernetes), Studio: one cold VM to "container started" in
    current context unconditionally; its published API port resets connections
    once the creating CLI exits.
 
-## 6. Operational notes
+## 6. Reliability
+
+1,000 pod VM lifecycles (20 × 50) on the Studio: zero failures, each round
+0.55–0.71 s, no leaked VMs or file descriptors.
+
+## 7. Operational notes
 
 * The **Studio's vmnet is exhausted until it reboots** (item 4 above, caused
   by tonight's VM churn before the pod network existed). kvz is unaffected; tart

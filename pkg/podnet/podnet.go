@@ -55,7 +55,9 @@ func New(cidr string, mtu int) (*Net, error) {
 	size := uint32(1) << uint(bits-ones)
 	gw := u2ip(base + 1)
 	if mtu == 0 {
-		mtu = 1500
+		// Jumbo frames: the switch's cost is per frame, so 64 KiB frames move
+		// pod-to-pod TCP at ~30-35 Gbps vs ~4.5 Gbps at 1500 (Studio).
+		mtu = 65520
 	}
 	vn, err := virtualnetwork.New(&types.Configuration{
 		MTU:               mtu,

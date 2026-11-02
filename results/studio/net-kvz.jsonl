@@ -1,0 +1,3 @@
+{"suite": "net", "label": "studio/kvz", "streams": 1, "gbps": 28.91}
+{"suite": "net", "label": "studio/kvz", "streams": 4, "gbps": 33.69}
+{"suite": "net", "label": "studio/kvz", "ping": "round-trip min/avg/max = 0.130/0.287/0.475 ms"}

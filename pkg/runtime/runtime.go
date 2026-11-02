@@ -92,19 +92,27 @@ func (t *Tracker) List() []*corev1.Pod {
 // provider-owned status.
 func (t *Tracker) UpdateMeta(pod *corev1.Pod) {
 	t.mu.Lock()
-	defer t.mu.Unlock()
 	p, ok := t.pods[Key(pod.Namespace, pod.Name)]
 	if !ok {
+		t.mu.Unlock()
 		return
 	}
 	st := p.Status
 	np := pod.DeepCopy()
 	np.Status = st
 	t.pods[Key(pod.Namespace, pod.Name)] = np
-	if np.Generation != p.Generation && t.notify != nil {
+	var cp *corev1.Pod
+	if np.Generation != p.Generation {
 		observe(np)
-		cp := np.DeepCopy()
-		go t.notify(cp) // report the new observedGeneration
+		cp = np.DeepCopy()
+	}
+	n := t.notify
+	t.mu.Unlock()
+	// Report the new observedGeneration synchronously: an asynchronous
+	// notification could land after a later status change (e.g. a resize
+	// applied right after this) and overwrite it with this older copy.
+	if cp != nil && n != nil {
+		n(cp)
 	}
 }
 

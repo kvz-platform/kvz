@@ -43,6 +43,9 @@ type Container struct {
 }
 
 type Spec struct {
+	IP         string      `json:"ip"`
+	Mask       int         `json:"mask"`
+	GW         string      `json:"gw"`
 	Hostname   string      `json:"hostname"`
 	DNS        []string    `json:"dns"`
 	Hosts      string      `json:"hosts"`
@@ -122,18 +125,22 @@ func main() {
 	must(mount("proc", "/proc", "proc", 0, ""), "mount /proc")
 	must(mount("devtmpfs", "/dev", "devtmpfs", 0, ""), "mount /dev")
 	must(mount("devpts", "/dev/pts", "devpts", 0, "ptmxmode=0666"), "mount /dev/pts")
-	must(mount("kvz", "/kvz", "virtiofs", 0, ""), "mount kvz share")
+	must(mount("kvz", "/v", "virtiofs", 0, ""), "mount kvz share")
+	must(mount("/v/pod", "/kvz", "", unix.MS_BIND, ""), "bind pod dir")
 	go serveExec()
 
-	// Connect the event channel early (in parallel with rootfs setup).
+	// Connect the event channel early (in parallel with rootfs setup) and
+	// announce ourselves so the host can timestamp kernel boot.
 	connc := make(chan *os.File, 1)
 	go func() {
-		for i := 0; i < 200; i++ {
+		for i := 0; i < 2000; i++ {
 			if f, err := dialHost(); err == nil {
+				b, _ := json.Marshal(Event{Type: "init", BootMs: t0, ReadyMs: bootMs()})
+				f.Write(append(b, '\n'))
 				connc <- f
 				return
 			}
-			time.Sleep(2 * time.Millisecond)
+			time.Sleep(time.Millisecond)
 		}
 		connc <- nil
 	}()
@@ -145,17 +152,16 @@ func main() {
 	if spec.Hostname != "" {
 		_ = unix.Sethostname([]byte(spec.Hostname))
 	}
+	netDone := make(chan error, 1)
+	go func() { netDone <- setupNetwork(spec.IP, spec.Mask, spec.GW) }()
 
 	// Per image: one read-only virtiofs lower; per container: overlay root.
 	roots := map[string]string{}
 	must(mount("tmpfs", "/rw", "tmpfs", 0, "mode=755"), "mount /rw")
 	for _, c := range spec.Containers {
 		specByName[c.Name] = c
-		lower := "/img/" + c.ImageTag
-		if _, ok := roots[lower]; !ok {
-			must(mount(c.ImageTag, lower, "virtiofs", unix.MS_RDONLY, ""), "mount image "+c.ImageTag)
-			roots[lower] = lower
-		}
+		lower := "/v/" + c.ImageTag
+		roots[lower] = lower
 		root := "/c/" + c.Name
 		up, wk := "/rw/"+c.Name+"/u", "/rw/"+c.Name+"/w"
 		_ = os.MkdirAll(up, 0o755)
@@ -190,7 +196,7 @@ func main() {
 				flags |= unix.MS_RDONLY
 			}
 			if m.Tag != "" {
-				must(mount(m.Tag, dst, "virtiofs", flags, ""), "volume "+m.Path)
+				must(mount("/v/"+m.Tag, dst, "", unix.MS_BIND|flags, ""), "volume "+m.Path)
 			} else {
 				src := filepath.Join("/kvz", m.Sub)
 				_ = os.MkdirAll(src, 0o777)
@@ -199,6 +205,7 @@ func main() {
 		}
 	}
 
+	must(<-netDone, "network")
 	conn := <-connc
 	if conn != nil {
 		evOut = conn

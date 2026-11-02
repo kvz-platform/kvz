@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"os"
 	"sync"
 	"time"
 
@@ -32,7 +33,9 @@ type Config struct {
 	CPUs       uint
 	MemoryMB   uint64
 	Shares     []Share
-	ConsoleLog string // "" = no console
+	ConsoleLog string   // "" = no console
+	NetFile    *os.File // VM side of a podnet socketpair; nil = Virtualization.framework NAT
+	MTU        int
 	ExtraArgs  string
 }
 
@@ -54,20 +57,25 @@ type VM struct {
 	done   chan struct{}
 	MAC    string
 	T      Timings
+	// nic must outlive the VM: Virtualization.framework wraps the raw fd
+	// without dup(2), and an unreachable *os.File is closed by its finalizer.
+	nic *os.File
+	// EventErr records why the event channel closed (diagnostics).
+	EventErr error
 }
 
 type Timings struct {
 	Configure time.Duration // config build + validate
 	Create    time.Duration // NewVirtualMachine
 	Start     time.Duration // vm.Start returned
-	Hello     time.Duration // agent connected (rootfs mounted)
+	Init      time.Duration // PID 1 running and connected
+	Hello     time.Duration // rootfs mounted
 }
 
+// cmdline: networking is configured by kvz-init over netlink (no kernel
+// IP autoconfig, which waited ~25 ms for carrier).
 func (c Config) cmdline() string {
-	mask := net.CIDRMask(c.Mask, 32)
-	m := net.IP(mask).String()
-	return fmt.Sprintf("console=hvc0 quiet loglevel=1 rdinit=/init panic=-1 "+
-		"ip=%s::%s:%s::eth0:off:%s random.trust_cpu=on %s", c.IP, c.GW, m, c.GW, c.ExtraArgs)
+	return fmt.Sprintf("console=hvc0 quiet loglevel=1 rdinit=/init panic=-1 %s", c.ExtraArgs)
 }
 
 // Boot creates and starts a VM. It returns once the VM is running; events
@@ -97,12 +105,27 @@ func Boot(c Config) (*VM, error) {
 			}
 		}
 	}
-	// network: NAT, host-chosen MAC
-	nat, err := vz.NewNATNetworkDeviceAttachment()
-	if err != nil {
-		return nil, err
+	// network: kvz podnet (file handle) or VZ NAT
+	var att vz.NetworkDeviceAttachment
+	if c.NetFile != nil {
+		fh, err := vz.NewFileHandleNetworkDeviceAttachment(c.NetFile)
+		if err != nil {
+			return nil, err
+		}
+		if c.MTU > 1500 {
+			if err := fh.SetMaximumTransmissionUnit(c.MTU); err != nil {
+				return nil, err
+			}
+		}
+		att = fh
+	} else {
+		nat, err := vz.NewNATNetworkDeviceAttachment()
+		if err != nil {
+			return nil, err
+		}
+		att = nat
 	}
-	nic, err := vz.NewVirtioNetworkDeviceConfiguration(nat)
+	nic, err := vz.NewVirtioNetworkDeviceConfiguration(att)
 	if err != nil {
 		return nil, err
 	}
@@ -122,29 +145,30 @@ func Boot(c Config) (*VM, error) {
 	if ent, err := vz.NewVirtioEntropyDeviceConfiguration(); err == nil {
 		cfg.SetEntropyDevicesVirtualMachineConfiguration([]*vz.VirtioEntropyDeviceConfiguration{ent})
 	}
-	// virtiofs
-	var fsdevs []vz.DirectorySharingDeviceConfiguration
+	// One virtiofs device (tag "kvz") exporting every directory the pod needs
+	// as a named entry: each extra virtio-pci device costs ~7 ms of guest boot.
+	dirs := map[string]*vz.SharedDirectory{}
 	for _, s := range c.Shares {
-		dev, err := vz.NewVirtioFileSystemDeviceConfiguration(s.Tag)
-		if err != nil {
-			return nil, err
-		}
 		sd, err := vz.NewSharedDirectory(s.Path, s.ReadOnly)
 		if err != nil {
 			return nil, fmt.Errorf("share %s: %w", s.Path, err)
 		}
-		share, err := vz.NewSingleDirectoryShare(sd)
-		if err != nil {
-			return nil, err
-		}
-		dev.SetDirectoryShare(share)
-		fsdevs = append(fsdevs, dev)
+		dirs[s.Tag] = sd
 	}
-	cfg.SetDirectorySharingDevicesVirtualMachineConfiguration(fsdevs)
+	fsdev, err := vz.NewVirtioFileSystemDeviceConfiguration("kvz")
+	if err != nil {
+		return nil, err
+	}
+	multi, err := vz.NewMultipleDirectoryShare(dirs)
+	if err != nil {
+		return nil, err
+	}
+	fsdev.SetDirectoryShare(multi)
+	cfg.SetDirectorySharingDevicesVirtualMachineConfiguration([]vz.DirectorySharingDeviceConfiguration{fsdev})
 	if ok, err := cfg.Validate(); !ok || err != nil {
 		return nil, fmt.Errorf("invalid vm config: %v", err)
 	}
-	v := &VM{Events: make(chan Event, 64), done: make(chan struct{}), MAC: mac.String()}
+	v := &VM{Events: make(chan Event, 64), done: make(chan struct{}), MAC: mac.String(), nic: c.NetFile}
 	v.T.Configure = time.Since(t0)
 	vm, err := vz.NewVirtualMachine(cfg)
 	if err != nil {
@@ -164,6 +188,7 @@ func Boot(c Config) (*VM, error) {
 		conn, err := ln.Accept()
 		ln.Close()
 		if err != nil {
+			v.EventErr = fmt.Errorf("accept: %w", err)
 			close(v.Events)
 			return
 		}
@@ -177,12 +202,17 @@ func Boot(c Config) (*VM, error) {
 			if json.Unmarshal(sc.Bytes(), &e) != nil {
 				continue
 			}
+			if e.Type == "init" {
+				v.T.Init = time.Since(t0)
+				continue
+			}
 			if first && e.Type == "hello" {
 				v.T.Hello = time.Since(t0)
 				first = false
 			}
 			v.Events <- e
 		}
+		v.EventErr = fmt.Errorf("event stream ended: %v", sc.Err())
 		close(v.Events)
 	}()
 	if err := vm.Start(); err != nil {
@@ -192,6 +222,9 @@ func Boot(c Config) (*VM, error) {
 	go func() {
 		for st := range vm.StateChangedNotify() {
 			if st == vz.VirtualMachineStateStopped || st == vz.VirtualMachineStateError {
+				if v.nic != nil {
+					v.nic.Close()
+				}
 				close(v.done)
 				return
 			}

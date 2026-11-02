@@ -28,6 +28,7 @@ import (
 
 	"github.com/GrowlyX/kvz/pkg/image"
 	"github.com/GrowlyX/kvz/pkg/microvm"
+	"github.com/GrowlyX/kvz/pkg/podnet"
 	rt "github.com/GrowlyX/kvz/pkg/runtime"
 	"github.com/GrowlyX/kvz/pkg/runtime/volumes"
 )
@@ -42,7 +43,7 @@ type Backend struct {
 	t      *rt.Tracker
 	vols   *volumes.Materializer
 	images *image.Store
-	ipam   *IPAM
+	pnet   *podnet.Net
 	dns    []string
 
 	mu   sync.Mutex
@@ -69,6 +70,13 @@ func DefaultKernel() string {
 	return filepath.Join(home, "Library", "Application Support", "com.apple.container", "kernels", "default.kernel-arm64")
 }
 
+func consoleLog(dir string) string {
+	if os.Getenv("KVZ_VM_CONSOLE") != "" {
+		return filepath.Join(dir, "console.log")
+	}
+	return ""
+}
+
 func exists(p string) bool { _, err := os.Stat(p); return err == nil }
 
 func New(dataDir string, t *rt.Tracker, vols *volumes.Materializer) (*Backend, error) {
@@ -77,12 +85,16 @@ func New(dataDir string, t *rt.Tracker, vols *volumes.Materializer) (*Backend, e
 	if err != nil {
 		return nil, err
 	}
-	ipam, err := NewIPAM()
+	cidr := os.Getenv("KVZ_POD_CIDR")
+	if cidr == "" {
+		cidr = "10.88.0.0/16"
+	}
+	pn, err := podnet.New(cidr, 0)
 	if err != nil {
 		return nil, err
 	}
 	return &Backend{dir: filepath.Join(dataDir, "mvm"), kernel: DefaultKernel(), initrd: initrd, t: t, vols: vols,
-		images: image.NewStore(filepath.Join(home, ".kvz", "images")), ipam: ipam, dns: []string{ipam.GW.String()},
+		images: image.NewStore(filepath.Join(home, ".kvz", "images")), pnet: pn, dns: []string{pn.GW.String()},
 		pods: map[string]*pod{}}, nil
 }
 
@@ -110,6 +122,9 @@ type mspec struct {
 }
 
 type spec struct {
+	IP         string   `json:"ip"`
+	Mask       int      `json:"mask"`
+	GW         string   `json:"gw"`
 	Hostname   string   `json:"hostname"`
 	DNS        []string `json:"dns"`
 	Hosts      string   `json:"hosts"`
@@ -119,7 +134,7 @@ type spec struct {
 
 func (b *Backend) Start(ctx context.Context, p *corev1.Pod) error {
 	key := rt.Key(p.Namespace, p.Name)
-	ip, err := b.ipam.Alloc()
+	ip, err := b.pnet.Alloc()
 	if err != nil {
 		return err
 	}
@@ -151,12 +166,12 @@ func (b *Backend) Start(ctx context.Context, p *corev1.Pod) error {
 }
 
 func (b *Backend) buildSpec(p *corev1.Pod, ps *pod) (*spec, []microvm.Share, error) {
-	sp := &spec{Hostname: p.Name, DNS: b.dns}
+	sp := &spec{Hostname: p.Name, DNS: b.dns, IP: ps.ip.String(), Mask: b.pnet.Bits(), GW: b.pnet.GW.String()}
 	if p.Spec.Hostname != "" {
 		sp.Hostname = p.Spec.Hostname
 	}
 	sp.Hosts = fmt.Sprintf("127.0.0.1\tlocalhost\n::1\tlocalhost\n%s\t%s\n", ps.ip, sp.Hostname)
-	shares := []microvm.Share{{Tag: "kvz", Path: ps.dir}}
+	shares := []microvm.Share{{Tag: "pod", Path: ps.dir}}
 	seen := map[string]bool{}
 	for _, c := range p.Spec.Containers {
 		im, err := b.images.Get(c.Image)
@@ -315,9 +330,14 @@ func (b *Backend) run(ctx context.Context, p *corev1.Pod, ps *pod) error {
 	if err := os.WriteFile(filepath.Join(ps.dir, "spec.json"), raw, 0o644); err != nil {
 		return err
 	}
-	vm, err := microvm.Boot(microvm.Config{Kernel: b.kernel, Initrd: b.initrd, IP: ps.ip, GW: b.ipam.GW, Mask: b.ipam.Bits,
-		CPUs: vcpus(p), MemoryMB: memMB(p), Shares: shares, ConsoleLog: filepath.Join(ps.dir, "console.log")})
+	nic, err := b.pnet.Attach(ctx)
 	if err != nil {
+		return err
+	}
+	vm, err := microvm.Boot(microvm.Config{Kernel: b.kernel, Initrd: b.initrd, IP: ps.ip, GW: b.pnet.GW, Mask: b.pnet.Bits(),
+		CPUs: vcpus(p), MemoryMB: memMB(p), Shares: shares, ConsoleLog: consoleLog(ps.dir), NetFile: nic})
+	if err != nil {
+		nic.Close()
 		return err
 	}
 	b.mu.Lock()
@@ -409,7 +429,7 @@ func (b *Backend) Stop(ctx context.Context, p *corev1.Pod) error {
 	}
 	ps.cancel()
 	<-ps.done
-	b.ipam.Free(ps.ip)
+	b.pnet.Free(ps.ip)
 	return os.RemoveAll(ps.dir)
 }
 
@@ -432,4 +452,24 @@ func (b *Backend) Exec(ctx context.Context, p *corev1.Pod, container string, cmd
 		return fmt.Errorf("pod not running")
 	}
 	return execInVM(ctx, ps.vm, container, cmd, attach)
+}
+
+// PortForward dials into the pod over the pod network.
+func (b *Backend) PortForward(ctx context.Context, p *corev1.Pod, port int32, stream io.ReadWriteCloser) error {
+	b.mu.Lock()
+	ps := b.pods[rt.Key(p.Namespace, p.Name)]
+	b.mu.Unlock()
+	if ps == nil {
+		return fmt.Errorf("pod not running")
+	}
+	c, err := b.pnet.Dial(ctx, net.JoinHostPort(ps.ip.String(), strconv.Itoa(int(port))))
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+	done := make(chan struct{}, 2)
+	go func() { io.Copy(c, stream); done <- struct{}{} }()
+	go func() { io.Copy(stream, c); done <- struct{}{} }()
+	<-done
+	return nil
 }

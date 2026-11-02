@@ -163,8 +163,19 @@ func (p *Provider) GetStatsSummary(context.Context) (*statsv1alpha1.Summary, err
 
 func (p *Provider) GetMetricsResource(context.Context) ([]*dto.MetricFamily, error) { return nil, nil }
 
-func (p *Provider) PortForward(ctx context.Context, ns, pod string, port int32, stream io.ReadWriteCloser) error {
-	return fmt.Errorf("port-forward not supported yet")
+type portForwarder interface {
+	PortForward(ctx context.Context, pod *corev1.Pod, port int32, stream io.ReadWriteCloser) error
+}
+
+func (p *Provider) PortForward(ctx context.Context, ns, name string, port int32, stream io.ReadWriteCloser) error {
+	pod, b, err := p.lookup(ns, name)
+	if err != nil {
+		return err
+	}
+	if pf, ok := b.(portForwarder); ok {
+		return pf.PortForward(ctx, pod, port, stream)
+	}
+	return fmt.Errorf("port-forward not supported by runtime %s", b.Handler())
 }
 
 var _ nodeutil.Provider = (*Provider)(nil)

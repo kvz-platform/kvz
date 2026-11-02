@@ -188,6 +188,16 @@ func (p *Provider) PreparePodNetwork(pod *corev1.Pod) {
 // UpdatePod forwards spec/metadata updates (env re-resolved by the pod
 // controller) to backends that react to them.
 func (p *Provider) UpdatePod(ctx context.Context, pod *corev1.Pod) error {
+	// A pod recreated under the same name (StatefulSet) while the provider
+	// still tracks the old one - virtual-kubelet removes terminal pods without
+	// a DeletePod - is a new pod: replace it instead of "updating" it.
+	if cur := p.t.Get(pod.Namespace, pod.Name); cur != nil && cur.UID != pod.UID {
+		if b, err := p.backendFor(cur); err == nil {
+			_ = b.Stop(ctx, cur)
+		}
+		p.t.Delete(pod.Namespace, pod.Name)
+		return p.CreatePod(ctx, pod)
+	}
 	p.t.UpdateMeta(pod)
 	b, err := p.backendFor(pod)
 	if err != nil {

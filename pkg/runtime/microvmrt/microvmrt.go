@@ -208,6 +208,7 @@ type mspec struct {
 type spec struct {
 	Sysctls     map[string]string `json:"sysctls,omitempty"`
 	Search      []string          `json:"search"`
+	DNSOptions  []string          `json:"dns_options,omitempty"`
 	HostNetwork bool              `json:"host_network,omitempty"`
 	NodeIP      string            `json:"node_ip,omitempty"`
 	MTU         int               `json:"mtu"`
@@ -287,8 +288,8 @@ func (b *Backend) Start(ctx context.Context, p *corev1.Pod) error {
 }
 
 func (b *Backend) buildSpec(p *corev1.Pod, ps *pod) (*spec, []microvm.Share, error) {
-	sp := &spec{Hostname: p.Name, DNS: b.dns,
-		Search: []string{p.Namespace + ".svc.cluster.local", "svc.cluster.local", "cluster.local"}, IP: ps.ip.String(), Mask: b.pnet.Bits(), GW: b.pnet.GW.String(), MTU: b.pnet.MTU}
+	sp := &spec{Hostname: p.Name, IP: ps.ip.String(), Mask: b.pnet.Bits(), GW: b.pnet.GW.String(), MTU: b.pnet.MTU}
+	sp.DNS, sp.Search, sp.DNSOptions = b.dnsFor(p)
 	if psc := p.Spec.SecurityContext; psc != nil && len(psc.Sysctls) > 0 {
 		// every pod has its own kernel, so all sysctls are pod-scoped here
 		sp.Sysctls = map[string]string{}
@@ -918,3 +919,56 @@ func hostsFile(p *corev1.Pod, ip, hostname string) string {
 type mountError struct{ error }
 
 func (e mountError) Unwrap() error { return e.error }
+
+// dnsFor implements dnsPolicy and dnsConfig like the kubelet: ClusterFirst
+// (cluster DNS + cluster search domains, ndots:5), Default (the node's
+// resolver, here the gateway that forwards to macOS), None, plus dnsConfig
+// nameservers/searches/options merged in (max 3 servers, 32 searches).
+func (b *Backend) dnsFor(p *corev1.Pod) (servers, searches, options []string) {
+	policy := p.Spec.DNSPolicy
+	if policy == "" {
+		policy = corev1.DNSClusterFirst
+	}
+	if policy == corev1.DNSClusterFirst && p.Spec.HostNetwork {
+		policy = corev1.DNSDefault
+	}
+	switch policy {
+	case corev1.DNSClusterFirst, corev1.DNSClusterFirstWithHostNet:
+		servers = append(servers, b.dns...)
+		searches = []string{p.Namespace + ".svc.cluster.local", "svc.cluster.local", "cluster.local"}
+		options = []string{"ndots:5"}
+	case corev1.DNSDefault:
+		servers = []string{b.pnet.GW.String()}
+	}
+	if c := p.Spec.DNSConfig; c != nil {
+		servers = append(servers, c.Nameservers...)
+		searches = append(searches, c.Searches...)
+		for _, o := range c.Options {
+			opt := o.Name
+			if o.Value != nil {
+				opt += ":" + *o.Value
+			}
+			replaced := false
+			for i, e := range options {
+				if strings.SplitN(e, ":", 2)[0] == o.Name {
+					options[i], replaced = opt, true
+				}
+			}
+			if !replaced {
+				options = append(options, opt)
+			}
+		}
+	}
+	dedup := func(in []string, max int) []string {
+		seen := map[string]bool{}
+		var out []string
+		for _, v := range in {
+			if v != "" && !seen[v] && len(out) < max {
+				seen[v] = true
+				out = append(out, v)
+			}
+		}
+		return out
+	}
+	return dedup(servers, 3), dedup(searches, 32), options
+}

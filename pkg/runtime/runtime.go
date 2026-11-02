@@ -188,17 +188,26 @@ func InitStatus(pod *corev1.Pod, hostIP string) {
 }
 
 func setCond(s *corev1.PodStatus, typ corev1.PodConditionType, v corev1.ConditionStatus) {
+	setCondReason(s, typ, v, "", "")
+}
+
+// setCondReason sets a condition with the kubelet's reason/message.
+func setCondReason(s *corev1.PodStatus, typ corev1.PodConditionType, v corev1.ConditionStatus, reason, msg string) {
 	for i := range s.Conditions {
 		if s.Conditions[i].Type == typ {
 			if s.Conditions[i].Status != v {
 				s.Conditions[i].Status = v
 				s.Conditions[i].LastTransitionTime = now()
 			}
+			s.Conditions[i].Reason, s.Conditions[i].Message = reason, msg
 			return
 		}
 	}
-	s.Conditions = append(s.Conditions, corev1.PodCondition{Type: typ, Status: v, LastTransitionTime: now()})
+	s.Conditions = append(s.Conditions, corev1.PodCondition{Type: typ, Status: v, LastTransitionTime: now(), Reason: reason, Message: msg})
 }
+
+// names lists container names as the kubelet formats them in messages.
+func names(n []string) string { return "[" + strings.Join(n, " ") + "]" }
 
 // find returns the status of an app or init container.
 func find(s *corev1.PodStatus, name string) *corev1.ContainerStatus {
@@ -285,6 +294,7 @@ func isSidecar(cs corev1.ContainerStatus) bool {
 func Recompute(s *corev1.PodStatus) {
 	initDone, initFailed := true, false
 	sidecars, sidecarsReady := 0, 0
+	var incomplete []string
 	for _, cs := range s.InitContainerStatuses {
 		switch {
 		case isSidecar(cs) && cs.State.Running != nil:
@@ -295,14 +305,16 @@ func Recompute(s *corev1.PodStatus) {
 		case cs.State.Terminated != nil && cs.State.Terminated.ExitCode == 0:
 		case cs.State.Terminated != nil:
 			initDone, initFailed = false, true
+			incomplete = append(incomplete, cs.Name)
 		default:
 			initDone = false
+			incomplete = append(incomplete, cs.Name)
 		}
 	}
 	if initDone {
 		setCond(s, corev1.PodInitialized, corev1.ConditionTrue)
 	} else {
-		setCond(s, corev1.PodInitialized, corev1.ConditionFalse)
+		setCondReason(s, corev1.PodInitialized, corev1.ConditionFalse, "ContainersNotInitialized", "containers with incomplete status: "+names(incomplete))
 	}
 	all, running, ready, failed, succeeded := len(s.ContainerStatuses), 0, 0, 0, 0
 	for _, cs := range s.ContainerStatuses {
@@ -335,12 +347,25 @@ func Recompute(s *corev1.PodStatus) {
 	case s.Phase == corev1.PodRunning:
 		// containers in CrashLoopBackOff keep the pod Running
 	}
-	r := corev1.ConditionFalse
 	if initDone && all > 0 && ready == all && sidecarsReady == sidecars {
-		r = corev1.ConditionTrue
+		setCond(s, corev1.PodReady, corev1.ConditionTrue)
+		setCond(s, corev1.ContainersReady, corev1.ConditionTrue)
+		return
 	}
-	setCond(s, corev1.PodReady, r)
-	setCond(s, corev1.ContainersReady, r)
+	var unready []string
+	for _, cs := range s.ContainerStatuses {
+		if !cs.Ready {
+			unready = append(unready, cs.Name)
+		}
+	}
+	msg := "containers with unready status: " + names(unready)
+	reason := "ContainersNotReady"
+	if s.Phase == corev1.PodSucceeded {
+		reason = "PodCompleted"
+		msg = ""
+	}
+	setCondReason(s, corev1.PodReady, corev1.ConditionFalse, reason, msg)
+	setCondReason(s, corev1.ContainersReady, corev1.ConditionFalse, reason, msg)
 }
 
 // Env flattens literal container env vars (valueFrom is resolved by

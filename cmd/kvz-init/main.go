@@ -61,6 +61,7 @@ type Container struct {
 
 type Spec struct {
 	Search      []string          `json:"search"`
+	DNSOptions  []string          `json:"dns_options,omitempty"`
 	HostNetwork bool              `json:"host_network,omitempty"`
 	NodeIP      string            `json:"node_ip,omitempty"`
 	MTU         int               `json:"mtu"`
@@ -228,7 +229,10 @@ func main() {
 				b.WriteString("nameserver " + d + "\n")
 			}
 			if len(spec.Search) > 0 {
-				b.WriteString("search " + strings.Join(spec.Search, " ") + "\noptions ndots:5\n")
+				b.WriteString("search " + strings.Join(spec.Search, " ") + "\n")
+			}
+			if len(spec.DNSOptions) > 0 {
+				b.WriteString("options " + strings.Join(spec.DNSOptions, " ") + "\n")
 			}
 			_ = os.WriteFile(etc+"/resolv.conf", []byte(b.String()), 0o644)
 		}

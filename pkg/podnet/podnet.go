@@ -14,6 +14,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"k8s.io/klog/v2"
 	"net"
 	"net/http/httptest"
 	"os"
@@ -77,6 +78,9 @@ func New(cidr string, mtu int) (*Net, error) {
 	})
 	if err != nil {
 		return nil, err
+	}
+	if err := addSupernetRoute(vn); err != nil {
+		klog.ErrorS(err, "netstack cannot reach other nodes' pods")
 	}
 	// Static pod IPs come from the top half; the built-in DHCP server (used by
 	// macOS guests) assigns from the bottom up.

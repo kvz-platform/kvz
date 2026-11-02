@@ -157,12 +157,16 @@ func (s *fastSwitch) handle(p *swPort, frame []byte) {
 			}
 			s.mu.RUnlock()
 			if q != nil && q.fd >= 0 {
+				s.guardUplink(q, frame)
 				sendFrom(p, q.fd, frame) // includes hairpin (q == p)
 			}
 			return
 		}
 	}
 	if dst[0]&1 == 1 { // broadcast / multicast: flood
+		if p.uplink && s.proxyARP(p, frame) {
+			return
+		}
 		if p != overlayPort {
 			s.flood(p, frame)
 		}
@@ -180,8 +184,10 @@ func (s *fastSwitch) handle(p *swPort, frame []byte) {
 	s.mu.RUnlock()
 	switch {
 	case q != nil && q != p && q.fd >= 0:
+		s.guardUplink(q, frame)
 		sendFrom(p, q.fd, frame)
 	case q == nil && !p.uplink && up != nil:
+		s.guardUplink(up, frame)
 		send(up.fd, frame) // gateway / not yet learned: let the netstack handle it
 	case q == nil && p.uplink:
 		s.flood(p, frame)
@@ -222,7 +228,13 @@ func (s *fastSwitch) deliverInbound(pkt []byte) {
 		mac = s.nat.gwMAC
 	}
 	copy(frame[0:6], mac[:])
-	copy(frame[6:12], s.nat.gwMAC[:])
+	// Source MAC: the one proxy-ARP advertises for the remote IP. Never the
+	// gateway's: gvisor-tap-vsock's switch learns source MACs, and once it
+	// believed the gateway MAC lived on the uplink it stopped forwarding the
+	// netstack's own broadcasts (ARP) to us, breaking every connection the
+	// node originates to pods (egress proxy, port-forward, LoadBalancer).
+	frame[6], frame[7] = 0x02, 0x6b
+	copy(frame[8:12], pkt[12:16])
 	frame[12], frame[13] = 0x08, 0x00
 	copy(frame[ethHdr:], pkt)
 	s.handle(overlayPort, frame)
@@ -289,4 +301,54 @@ func sendFrom(p *swPort, fd int, frame []byte) {
 		return
 	}
 	send(fd, frame)
+}
+
+// proxyARP answers the netstack's ARP requests for pods on other nodes with a
+// MAC derived from the IP; frames sent there are routed over the overlay.
+func (s *fastSwitch) proxyARP(p *swPort, frame []byte) bool {
+	if s.ov == nil || len(frame) < 42 || frame[12] != 0x08 || frame[13] != 0x06 || frame[20] != 0 || frame[21] != 1 {
+		return false
+	}
+	var tip [4]byte
+	copy(tip[:], frame[38:42])
+	if _, remote := s.ov.lookup(tip); !remote {
+		return false
+	}
+	mac := [6]byte{0x02, 0x6b, tip[0], tip[1], tip[2], tip[3]}
+	r := make([]byte, 42)
+	copy(r[0:6], frame[6:12])
+	copy(r[6:12], mac[:])
+	r[12], r[13] = 0x08, 0x06
+	copy(r[14:20], []byte{0, 1, 8, 0, 6, 4})
+	r[20], r[21] = 0, 2 // reply
+	copy(r[22:28], mac[:])
+	copy(r[28:32], tip[:])
+	copy(r[32:38], frame[22:28])
+	copy(r[38:42], frame[28:32])
+	sendShared(p.fd, r)
+	return true
+}
+
+// routerMAC replaces the gateway's MAC as source on frames sent to the
+// netstack.
+var routerMAC = [6]byte{0x02, 0x6b, 0xff, 0xff, 0xff, 0xfe}
+
+var gatewayMACRewrites atomic.Uint64
+
+// GatewayMACRewrites counts frames guardUplink had to fix (debugging).
+func GatewayMACRewrites() uint64 { return gatewayMACRewrites.Load() }
+
+// guardUplink keeps an invariant gvisor-tap-vsock depends on: no frame
+// reaches the netstack claiming the gateway's own MAC as source. Its switch
+// learns source MACs and floods broadcasts everywhere except where a frame's
+// source was learned; once it "learned" the gateway on kvz's uplink, the
+// netstack's ARP requests stopped reaching pods and every connection the node
+// originates (egress proxy, port-forward, hostPort, NodePort) broke. Frames
+// the netstack sent that kvz hairpins back (service traffic to an endpoint
+// outside the pod network, e.g. the node's own address) would teach it that.
+func (s *fastSwitch) guardUplink(q *swPort, frame []byte) {
+	if q != nil && q.uplink && s.nat != nil && len(frame) >= 12 && [6]byte(frame[6:12]) == s.nat.gwMAC {
+		copy(frame[6:12], routerMAC[:])
+		gatewayMACRewrites.Add(1)
+	}
 }

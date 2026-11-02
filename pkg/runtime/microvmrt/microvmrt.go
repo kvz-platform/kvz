@@ -426,8 +426,17 @@ func (b *Backend) buildSpec(p *corev1.Pod, ps *pod) (*spec, []microvm.Share, err
 			} else {
 				tag := fmt.Sprintf("hp%d", hp)
 				hp++
-				shares = append(shares, microvm.Share{Tag: tag, Path: host, ReadOnly: ro})
-				sp.Mounts = append(sp.Mounts, mspec{Container: cname, Tag: tag, Path: guest, ReadOnly: ro})
+				// virtiofs shares directories: a file hostPath (e.g. /etc/hosts)
+				// shares its directory and the guest bind-mounts the file
+				dir, sub := host, ""
+				if real, err := filepath.EvalSymlinks(host); err == nil {
+					dir = real
+				}
+				if st, err := os.Stat(dir); err == nil && !st.IsDir() {
+					dir, sub = filepath.Dir(dir), filepath.Base(dir)
+				}
+				shares = append(shares, microvm.Share{Tag: tag, Path: dir, ReadOnly: ro})
+				sp.Mounts = append(sp.Mounts, mspec{Container: cname, Tag: tag, Sub: sub, Path: guest, ReadOnly: ro})
 			}
 		}
 	}

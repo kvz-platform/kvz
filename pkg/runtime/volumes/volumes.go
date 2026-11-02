@@ -52,8 +52,13 @@ func (m *Materializer) Materialize(pod *corev1.Pod, podDir string) (map[string][
 			_ = os.Chmod(dst, 0o777) // like the kubelet (umask would leave 0755)
 		case v.HostPath != nil:
 			dst = v.HostPath.Path
-			if t := v.HostPath.Type; t != nil && (*t == corev1.HostPathDirectoryOrCreate) {
+			if t := v.HostPath.Type; t != nil && *t == corev1.HostPathDirectoryOrCreate {
 				_ = os.MkdirAll(dst, 0o777)
+			} else if t != nil && *t == corev1.HostPathFileOrCreate {
+				_ = os.MkdirAll(filepath.Dir(dst), 0o755)
+				if f, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY, 0o644); err == nil {
+					f.Close()
+				}
 			}
 		case v.PersistentVolumeClaim != nil && m.Client != nil:
 			path, err := m.pvcPath(pod.Namespace, v.PersistentVolumeClaim.ClaimName)

@@ -268,7 +268,11 @@ func main() {
 				_ = os.MkdirAll(src, 0o777)
 				must(mount(src, dst, "", unix.MS_BIND, ""), "volume "+m.Path)
 			case m.Tag != "":
-				must(mount("/v/"+m.Tag, dst, "", unix.MS_BIND, ""), "volume "+m.Path)
+				src := "/v/" + m.Tag
+				if m.Sub != "" { // a file inside the shared directory
+					src = filepath.Join(src, m.Sub)
+				}
+				must(mount(src, dst, "", unix.MS_BIND, ""), "volume "+m.Path)
 			default:
 				src := filepath.Join("/kvz", m.Sub)
 				_ = os.MkdirAll(src, 0o777)

@@ -14,6 +14,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"net"
 	"net/http"
+	"net/http/pprof"
 	"os"
 	"runtime"
 	"strconv"
@@ -478,6 +479,12 @@ func Run(ctx context.Context, o Options) error {
 	}
 	tlsCfg := &tls.Config{MinVersion: tls.VersionTLS12, Certificates: []tls.Certificate{cert}, ClientCAs: pool, ClientAuth: tls.RequireAndVerifyClientCert}
 	mux := http.NewServeMux()
+	// debugging (client-cert authenticated like the rest of the kubelet API;
+	// reach via kubectl get --raw /api/v1/nodes/<node>/proxy/debug/...)
+	mux.HandleFunc("/debug/pprof/", pprof.Index)
+	mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+	mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+	mux.HandleFunc("/debug/kvz/podnet", func(w http.ResponseWriter, r *http.Request) { pn.DebugDump(w) })
 	mux.Handle("/", api.PodHandler(api.PodHandlerConfig{
 		RunInContainer: p.RunInContainer, AttachToContainer: p.AttachToContainer, GetContainerLogs: p.GetContainerLogs,
 		GetPods: p.GetPods, GetStatsSummary: p.GetStatsSummary, GetMetricsResource: p.GetMetricsResource, PortForward: p.PortForward,

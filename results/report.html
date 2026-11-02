@@ -1,0 +1,348 @@
+<!doctype html><html><head><meta charset="utf-8"><title>kvz benchmarks</title>
+<style>
+.viz-root { color-scheme: light; --surface-1:#fcfcfb; --text-primary:#0b0b0b; --text-secondary:#52514e; --grid:#e6e5e1;
+  --series-1:#2a78d6; --series-2:#eb6834; --series-3:#1baf7a; --series-4:#eda100; }
+@media (prefers-color-scheme: dark) { :root:where(:not([data-theme="light"])) .viz-root { color-scheme: dark;
+  --surface-1:#1a1a19; --text-primary:#f0efec; --text-secondary:#c3c2b7; --grid:#33322f;
+  --series-1:#3987e5; --series-2:#d95926; --series-3:#199e70; --series-4:#c98500; } }
+:root[data-theme="dark"] .viz-root { color-scheme: dark; --surface-1:#1a1a19; --text-primary:#f0efec; --text-secondary:#c3c2b7; --grid:#33322f;
+  --series-1:#3987e5; --series-2:#d95926; --series-3:#199e70; --series-4:#c98500; }
+body { margin:0; }
+.viz-root { background:var(--surface-1); color:var(--text-primary); font:14px/1.4 -apple-system, system-ui, sans-serif; padding:24px 32px; }
+h1 { font-size:22px; margin:0 0 4px; } h2 { font-size:16px; margin:28px 0 8px; }
+p.sub { color:var(--text-secondary); margin:0 0 12px; max-width:900px; }
+.legend { display:flex; gap:18px; flex-wrap:wrap; margin:8px 0 16px; color:var(--text-secondary); }
+.key i { display:inline-block; width:12px; height:12px; border-radius:3px; margin-right:6px; vertical-align:-1px; }
+.grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(460px, 1fr)); gap:18px 28px; }
+.panel { margin:0; } figcaption { display:flex; justify-content:space-between; margin-bottom:6px; }
+figcaption span { color:var(--text-secondary); font-size:12px; }
+svg { width:100%; height:auto; overflow:visible; }
+.lbl, .val { fill:var(--text-secondary); font-size:12px; } .val { fill:var(--text-primary); }
+.hit { fill:transparent; } .bar:hover .hit, .bar:focus .hit { fill:var(--grid); }
+.s1 { fill:var(--series-1); background:var(--series-1); } .s2 { fill:var(--series-2); background:var(--series-2); }
+.s3 { fill:var(--series-3); background:var(--series-3); } .s4 { fill:var(--series-4); background:var(--series-4); }
+table { border-collapse:collapse; font-size:12px; margin-top:8px; } th, td { padding:4px 10px; border-bottom:1px solid var(--grid); text-align:right; }
+th:first-child, td:first-child, th:nth-child(2), td:nth-child(2) { text-align:left; }
+details { margin-top:24px; }
+</style></head><body><div class="viz-root">
+<h1>kvz: native-macOS Kubernetes, benchmarked</h1>
+<p class="sub">Same harness, same hosts, one platform at a time. <b>M4</b> = median of three Mac minis (M4, 16 GB, macOS 26.6.2);
+<b>Studio</b> = M5 Max, 36 GB, macOS 27 (busy host: ~26 unrelated containers running). ★ marks the best value per panel.
+Every kvz Linux pod is its own cold-booted VM; no pools, snapshots or pre-started pods.</p>
+<div class="legend"><span class="key"><i class="s1"></i>kvz (new)</span><span class="key"><i class="s2"></i>k3s in Lima</span><span class="key"><i class="s3"></i>Apple container cluster</span><span class="key"><i class="s4"></i>kvz v1 (Apple daemon)</span></div>
+<h2>M4 Mac mini (median of 3)</h2><div class="grid"><figure class="panel"><figcaption><b>Restart → API ready</b><span>lower is better</span></figcaption>
+<svg viewBox="0 0 520 90" role="img" aria-label="Restart → API ready"><g class="bar" tabindex="0"><title>kvz (new): 2.22 s</title>
+<rect class="hit" x="0" y="-3" width="520" height="28" />
+<text class="lbl" x="162" y="15.0" text-anchor="end">kvz (new)</text>
+<path class="s1" d="M170,0 h62.76691729323308 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-62.76691729323308 z"/>
+<text class="val" x="242.76691729323306" y="15.0">2.22 s</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 9.31 s</title>
+<rect class="hit" x="0" y="27" width="520" height="28" />
+<text class="lbl" x="162" y="45.0" text-anchor="end">k3s in Lima</text>
+<path class="s2" d="M170,30 h276.0 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-276.0 z"/>
+<text class="val" x="456.0" y="45.0">9.31 s</text></g><g class="bar" tabindex="0"><title>kvz v1 (Apple daemon): 2.11 s</title>
+<rect class="hit" x="0" y="57" width="520" height="28" />
+<text class="lbl" x="162" y="75.0" text-anchor="end">kvz v1 (Apple daemon)</text>
+<path class="s4" d="M170,60 h59.458646616541344 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-59.458646616541344 z"/>
+<text class="val" x="239.45864661654133" y="75.0">2.11 s ★</text></g></svg></figure><figure class="panel"><figcaption><b>Idle memory (phys footprint)</b><span>lower is better</span></figcaption>
+<svg viewBox="0 0 520 90" role="img" aria-label="Idle memory (phys footprint)"><g class="bar" tabindex="0"><title>kvz (new): 252 MB</title>
+<rect class="hit" x="0" y="-3" width="520" height="28" />
+<text class="lbl" x="162" y="15.0" text-anchor="end">kvz (new)</text>
+<path class="s1" d="M170,0 h18.082406391978694 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-18.082406391978694 z"/>
+<text class="val" x="198.08240639197868" y="15.0">252 MB ★</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 3,192 MB</title>
+<rect class="hit" x="0" y="27" width="520" height="28" />
+<text class="lbl" x="162" y="45.0" text-anchor="end">k3s in Lima</text>
+<path class="s2" d="M170,30 h276.0 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-276.0 z"/>
+<text class="val" x="456.0" y="45.0">3,192 MB</text></g><g class="bar" tabindex="0"><title>Apple container cluster: 2,453 MB</title>
+<rect class="hit" x="0" y="57" width="520" height="28" />
+<text class="lbl" x="162" y="75.0" text-anchor="end">Apple container cluster</text>
+<path class="s3" d="M170,60 h211.20037599874667 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-211.20037599874667 z"/>
+<text class="val" x="391.20037599874667" y="75.0">2,453 MB</text></g></svg></figure><figure class="panel"><figcaption><b>Idle CPU</b><span>lower is better</span></figcaption>
+<svg viewBox="0 0 520 90" role="img" aria-label="Idle CPU"><g class="bar" tabindex="0"><title>kvz (new): 1.66 % core</title>
+<rect class="hit" x="0" y="-3" width="520" height="28" />
+<text class="lbl" x="162" y="15.0" text-anchor="end">kvz (new)</text>
+<path class="s1" d="M170,0 h13.808429118773944 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-13.808429118773944 z"/>
+<text class="val" x="193.80842911877394" y="15.0">1.66 % core ★</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 20.08 % core</title>
+<rect class="hit" x="0" y="27" width="520" height="28" />
+<text class="lbl" x="162" y="45.0" text-anchor="end">k3s in Lima</text>
+<path class="s2" d="M170,30 h211.41762452107278 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-211.41762452107278 z"/>
+<text class="val" x="391.41762452107275" y="45.0">20.08 % core</text></g><g class="bar" tabindex="0"><title>Apple container cluster: 26.1 % core</title>
+<rect class="hit" x="0" y="57" width="520" height="28" />
+<text class="lbl" x="162" y="75.0" text-anchor="end">Apple container cluster</text>
+<path class="s3" d="M170,60 h276.0 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-276.0 z"/>
+<text class="val" x="456.0" y="75.0">26.1 % core</text></g></svg></figure><figure class="panel"><figcaption><b>1 nginx pod → Ready</b><span>lower is better</span></figcaption>
+<svg viewBox="0 0 520 90" role="img" aria-label="1 nginx pod → Ready"><g class="bar" tabindex="0"><title>kvz (new): 103 ms</title>
+<rect class="hit" x="0" y="-3" width="520" height="28" />
+<text class="lbl" x="162" y="15.0" text-anchor="end">kvz (new)</text>
+<path class="s1" d="M170,0 h29.58957351486589 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-29.58957351486589 z"/>
+<text class="val" x="209.5895735148659" y="15.0">103 ms ★</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 421 ms</title>
+<rect class="hit" x="0" y="27" width="520" height="28" />
+<text class="lbl" x="162" y="45.0" text-anchor="end">k3s in Lima</text>
+<path class="s2" d="M170,30 h133.17344504567404 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-133.17344504567404 z"/>
+<text class="val" x="313.17344504567404" y="45.0">421 ms</text></g><g class="bar" tabindex="0"><title>Apple container cluster: 859 ms</title>
+<rect class="hit" x="0" y="57" width="520" height="28" />
+<text class="lbl" x="162" y="75.0" text-anchor="end">Apple container cluster</text>
+<path class="s3" d="M170,60 h276.0 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-276.0 z"/>
+<text class="val" x="456.0" y="75.0">859 ms</text></g></svg></figure><figure class="panel"><figcaption><b>20 nginx pods → all Ready</b><span>lower is better</span></figcaption>
+<svg viewBox="0 0 520 90" role="img" aria-label="20 nginx pods → all Ready"><g class="bar" tabindex="0"><title>kvz (new): 0.42 s</title>
+<rect class="hit" x="0" y="-3" width="520" height="28" />
+<text class="lbl" x="162" y="15.0" text-anchor="end">kvz (new)</text>
+<path class="s1" d="M170,0 h86.46153846153845 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-86.46153846153845 z"/>
+<text class="val" x="266.46153846153845" y="15.0">0.42 s ★</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 1.3 s</title>
+<rect class="hit" x="0" y="27" width="520" height="28" />
+<text class="lbl" x="162" y="45.0" text-anchor="end">k3s in Lima</text>
+<path class="s2" d="M170,30 h276.0 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-276.0 z"/>
+<text class="val" x="456.0" y="45.0">1.3 s</text></g><g class="bar" tabindex="0"><title>Apple container cluster: 0.88 s</title>
+<rect class="hit" x="0" y="57" width="520" height="28" />
+<text class="lbl" x="162" y="75.0" text-anchor="end">Apple container cluster</text>
+<path class="s3" d="M170,60 h185.53846153846155 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-185.53846153846155 z"/>
+<text class="val" x="365.53846153846155" y="75.0">0.88 s</text></g></svg></figure><figure class="panel"><figcaption><b>50 nginx pods → all Ready</b><span>lower is better</span></figcaption>
+<svg viewBox="0 0 520 90" role="img" aria-label="50 nginx pods → all Ready"><g class="bar" tabindex="0"><title>kvz (new): 1.3 s</title>
+<rect class="hit" x="0" y="-3" width="520" height="28" />
+<text class="lbl" x="162" y="15.0" text-anchor="end">kvz (new)</text>
+<path class="s1" d="M170,0 h77.24999999999999 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-77.24999999999999 z"/>
+<text class="val" x="257.25" y="15.0">1.3 s ★</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 4.48 s</title>
+<rect class="hit" x="0" y="27" width="520" height="28" />
+<text class="lbl" x="162" y="45.0" text-anchor="end">k3s in Lima</text>
+<path class="s2" d="M170,30 h276.0 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-276.0 z"/>
+<text class="val" x="456.0" y="45.0">4.48 s</text></g><g class="bar" tabindex="0"><title>Apple container cluster: 4.2 s</title>
+<rect class="hit" x="0" y="57" width="520" height="28" />
+<text class="lbl" x="162" y="75.0" text-anchor="end">Apple container cluster</text>
+<path class="s3" d="M170,60 h258.5 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-258.5 z"/>
+<text class="val" x="438.5" y="75.0">4.2 s</text></g></svg></figure><figure class="panel"><figcaption><b>Host memory with 20 pods running</b><span>lower is better</span></figcaption>
+<svg viewBox="0 0 520 90" role="img" aria-label="Host memory with 20 pods running"><g class="bar" tabindex="0"><title>kvz (new): 1,585 MB</title>
+<rect class="hit" x="0" y="-3" width="520" height="28" />
+<text class="lbl" x="162" y="15.0" text-anchor="end">kvz (new)</text>
+<path class="s1" d="M170,0 h113.63383865154246 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-113.63383865154246 z"/>
+<text class="val" x="293.6338386515425" y="15.0">1,585 MB ★</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 3,773 MB</title>
+<rect class="hit" x="0" y="27" width="520" height="28" />
+<text class="lbl" x="162" y="45.0" text-anchor="end">k3s in Lima</text>
+<path class="s2" d="M170,30 h276.0 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-276.0 z"/>
+<text class="val" x="456.0" y="45.0">3,773 MB</text></g><g class="bar" tabindex="0"><title>Apple container cluster: 3,009 MB</title>
+<rect class="hit" x="0" y="57" width="520" height="28" />
+<text class="lbl" x="162" y="75.0" text-anchor="end">Apple container cluster</text>
+<path class="s3" d="M170,60 h219.27573412488076 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-219.27573412488076 z"/>
+<text class="val" x="399.2757341248807" y="75.0">3,009 MB</text></g></svg></figure><figure class="panel"><figcaption><b>Delete 20 pods → gone</b><span>lower is better</span></figcaption>
+<svg viewBox="0 0 520 90" role="img" aria-label="Delete 20 pods → gone"><g class="bar" tabindex="0"><title>kvz (new): 0.1 s</title>
+<rect class="hit" x="0" y="-3" width="520" height="28" />
+<text class="lbl" x="162" y="15.0" text-anchor="end">kvz (new)</text>
+<path class="s1" d="M170,0 h19.728813559322035 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-19.728813559322035 z"/>
+<text class="val" x="199.72881355932202" y="15.0">0.1 s ★</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 0.81 s</title>
+<rect class="hit" x="0" y="27" width="520" height="28" />
+<text class="lbl" x="162" y="45.0" text-anchor="end">k3s in Lima</text>
+<path class="s2" d="M170,30 h188.20338983050848 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-188.20338983050848 z"/>
+<text class="val" x="368.2033898305085" y="45.0">0.81 s</text></g><g class="bar" tabindex="0"><title>Apple container cluster: 1.18 s</title>
+<rect class="hit" x="0" y="57" width="520" height="28" />
+<text class="lbl" x="162" y="75.0" text-anchor="end">Apple container cluster</text>
+<path class="s3" d="M170,60 h276.0 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-276.0 z"/>
+<text class="val" x="456.0" y="75.0">1.18 s</text></g></svg></figure><figure class="panel"><figcaption><b>API creates / s</b><span>higher is better</span></figcaption>
+<svg viewBox="0 0 520 90" role="img" aria-label="API creates / s"><g class="bar" tabindex="0"><title>kvz (new): 9,442 ops/s</title>
+<rect class="hit" x="0" y="-3" width="520" height="28" />
+<text class="lbl" x="162" y="15.0" text-anchor="end">kvz (new)</text>
+<path class="s1" d="M170,0 h276.0 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-276.0 z"/>
+<text class="val" x="456.0" y="15.0">9,442 ops/s ★</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 3,200 ops/s</title>
+<rect class="hit" x="0" y="27" width="520" height="28" />
+<text class="lbl" x="162" y="45.0" text-anchor="end">k3s in Lima</text>
+<path class="s2" d="M170,30 h90.89012443738417 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-90.89012443738417 z"/>
+<text class="val" x="270.8901244373842" y="45.0">3,200 ops/s</text></g><g class="bar" tabindex="0"><title>Apple container cluster: 7,974 ops/s</title>
+<rect class="hit" x="0" y="57" width="520" height="28" />
+<text class="lbl" x="162" y="75.0" text-anchor="end">Apple container cluster</text>
+<path class="s3" d="M170,60 h232.45432883240667 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-232.45432883240667 z"/>
+<text class="val" x="412.45432883240665" y="75.0">7,974 ops/s</text></g></svg></figure><figure class="panel"><figcaption><b>API gets / s</b><span>higher is better</span></figcaption>
+<svg viewBox="0 0 520 90" role="img" aria-label="API gets / s"><g class="bar" tabindex="0"><title>kvz (new): 18,643 ops/s</title>
+<rect class="hit" x="0" y="-3" width="520" height="28" />
+<text class="lbl" x="162" y="15.0" text-anchor="end">kvz (new)</text>
+<path class="s1" d="M170,0 h276.0 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-276.0 z"/>
+<text class="val" x="456.0" y="15.0">18,643 ops/s ★</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 9,939 ops/s</title>
+<rect class="hit" x="0" y="27" width="520" height="28" />
+<text class="lbl" x="162" y="45.0" text-anchor="end">k3s in Lima</text>
+<path class="s2" d="M170,30 h145.27425843480125 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-145.27425843480125 z"/>
+<text class="val" x="325.27425843480125" y="45.0">9,939 ops/s</text></g><g class="bar" tabindex="0"><title>Apple container cluster: 15,044 ops/s</title>
+<rect class="hit" x="0" y="57" width="520" height="28" />
+<text class="lbl" x="162" y="75.0" text-anchor="end">Apple container cluster</text>
+<path class="s3" d="M170,60 h221.95397736415813 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-221.95397736415813 z"/>
+<text class="val" x="401.95397736415816" y="75.0">15,044 ops/s</text></g></svg></figure><figure class="panel"><figcaption><b>Create → watch event p50</b><span>lower is better</span></figcaption>
+<svg viewBox="0 0 520 90" role="img" aria-label="Create → watch event p50"><g class="bar" tabindex="0"><title>kvz (new): 0.42 ms</title>
+<rect class="hit" x="0" y="-3" width="520" height="28" />
+<text class="lbl" x="162" y="15.0" text-anchor="end">kvz (new)</text>
+<path class="s1" d="M170,0 h136.0 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-136.0 z"/>
+<text class="val" x="316.0" y="15.0">0.42 ms ★</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 0.84 ms</title>
+<rect class="hit" x="0" y="27" width="520" height="28" />
+<text class="lbl" x="162" y="45.0" text-anchor="end">k3s in Lima</text>
+<path class="s2" d="M170,30 h276.0 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-276.0 z"/>
+<text class="val" x="456.0" y="45.0">0.84 ms</text></g><g class="bar" tabindex="0"><title>Apple container cluster: 0.52 ms</title>
+<rect class="hit" x="0" y="57" width="520" height="28" />
+<text class="lbl" x="162" y="75.0" text-anchor="end">Apple container cluster</text>
+<path class="s3" d="M170,60 h169.33333333333334 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-169.33333333333334 z"/>
+<text class="val" x="349.33333333333337" y="75.0">0.52 ms</text></g></svg></figure><figure class="panel"><figcaption><b>API create p99</b><span>lower is better</span></figcaption>
+<svg viewBox="0 0 520 90" role="img" aria-label="API create p99"><g class="bar" tabindex="0"><title>kvz (new): 14.17 ms</title>
+<rect class="hit" x="0" y="-3" width="520" height="28" />
+<text class="lbl" x="162" y="15.0" text-anchor="end">kvz (new)</text>
+<path class="s1" d="M170,0 h52.01581250882394 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-52.01581250882394 z"/>
+<text class="val" x="232.01581250882396" y="15.0">14.17 ms</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 70.83 ms</title>
+<rect class="hit" x="0" y="27" width="520" height="28" />
+<text class="lbl" x="162" y="45.0" text-anchor="end">k3s in Lima</text>
+<path class="s2" d="M170,30 h276.0 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-276.0 z"/>
+<text class="val" x="456.0" y="45.0">70.83 ms</text></g><g class="bar" tabindex="0"><title>Apple container cluster: 12.84 ms</title>
+<rect class="hit" x="0" y="57" width="520" height="28" />
+<text class="lbl" x="162" y="75.0" text-anchor="end">Apple container cluster</text>
+<path class="s3" d="M170,60 h46.75815332486235 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-46.75815332486235 z"/>
+<text class="val" x="226.75815332486235" y="75.0">12.84 ms ★</text></g></svg></figure></div>
+<h2>Mac Studio (M5 Max)</h2><div class="grid"><figure class="panel"><figcaption><b>Restart → API ready</b><span>lower is better</span></figcaption>
+<svg viewBox="0 0 520 90" role="img" aria-label="Restart → API ready"><g class="bar" tabindex="0"><title>kvz (new): 1.42 s</title>
+<rect class="hit" x="0" y="-3" width="520" height="28" />
+<text class="lbl" x="162" y="15.0" text-anchor="end">kvz (new)</text>
+<path class="s1" d="M170,0 h39.548740416210286 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-39.548740416210286 z"/>
+<text class="val" x="219.54874041621028" y="15.0">1.42 s ★</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 9.13 s</title>
+<rect class="hit" x="0" y="27" width="520" height="28" />
+<text class="lbl" x="162" y="45.0" text-anchor="end">k3s in Lima</text>
+<path class="s2" d="M170,30 h276.0 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-276.0 z"/>
+<text class="val" x="456.0" y="45.0">9.13 s</text></g><g class="bar" tabindex="0"><title>kvz v1 (Apple daemon): 2.12 s</title>
+<rect class="hit" x="0" y="57" width="520" height="28" />
+<text class="lbl" x="162" y="75.0" text-anchor="end">kvz v1 (Apple daemon)</text>
+<path class="s4" d="M170,60 h61.01642935377875 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-61.01642935377875 z"/>
+<text class="val" x="241.01642935377873" y="75.0">2.12 s</text></g></svg></figure><figure class="panel"><figcaption><b>Idle memory (phys footprint)</b><span>lower is better</span></figcaption>
+<svg viewBox="0 0 520 90" role="img" aria-label="Idle memory (phys footprint)"><g class="bar" tabindex="0"><title>kvz (new): 277 MB</title>
+<rect class="hit" x="0" y="-3" width="520" height="28" />
+<text class="lbl" x="162" y="15.0" text-anchor="end">kvz (new)</text>
+<path class="s1" d="M170,0 h23.851031706089582 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-23.851031706089582 z"/>
+<text class="val" x="203.85103170608957" y="15.0">277 MB ★</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 2,782 MB</title>
+<rect class="hit" x="0" y="27" width="520" height="28" />
+<text class="lbl" x="162" y="45.0" text-anchor="end">k3s in Lima</text>
+<path class="s2" d="M170,30 h276.0 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-276.0 z"/>
+<text class="val" x="456.0" y="45.0">2,782 MB</text></g><g class="bar" tabindex="0"><title>Apple container cluster: 2,598 MB</title>
+<rect class="hit" x="0" y="57" width="520" height="28" />
+<text class="lbl" x="162" y="75.0" text-anchor="end">Apple container cluster</text>
+<path class="s3" d="M170,60 h257.47961751383997 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-257.47961751383997 z"/>
+<text class="val" x="437.47961751383997" y="75.0">2,598 MB</text></g></svg></figure><figure class="panel"><figcaption><b>Idle CPU</b><span>lower is better</span></figcaption>
+<svg viewBox="0 0 520 90" role="img" aria-label="Idle CPU"><g class="bar" tabindex="0"><title>kvz (new): 1.1 % core</title>
+<rect class="hit" x="0" y="-3" width="520" height="28" />
+<text class="lbl" x="162" y="15.0" text-anchor="end">kvz (new)</text>
+<path class="s1" d="M170,0 h17.644413211524945 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-17.644413211524945 z"/>
+<text class="val" x="197.64441321152495" y="15.0">1.1 % core ★</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 9.88 % core</title>
+<rect class="hit" x="0" y="27" width="520" height="28" />
+<text class="lbl" x="162" y="45.0" text-anchor="end">k3s in Lima</text>
+<path class="s2" d="M170,30 h190.40618411806042 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-190.40618411806042 z"/>
+<text class="val" x="370.4061841180604" y="45.0">9.88 % core</text></g><g class="bar" tabindex="0"><title>Apple container cluster: 14.23 % core</title>
+<rect class="hit" x="0" y="57" width="520" height="28" />
+<text class="lbl" x="162" y="75.0" text-anchor="end">Apple container cluster</text>
+<path class="s3" d="M170,60 h276.0 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-276.0 z"/>
+<text class="val" x="456.0" y="75.0">14.23 % core</text></g></svg></figure><figure class="panel"><figcaption><b>1 nginx pod → Ready</b><span>lower is better</span></figcaption>
+<svg viewBox="0 0 520 90" role="img" aria-label="1 nginx pod → Ready"><g class="bar" tabindex="0"><title>kvz (new): 104 ms</title>
+<rect class="hit" x="0" y="-3" width="520" height="28" />
+<text class="lbl" x="162" y="15.0" text-anchor="end">kvz (new)</text>
+<path class="s1" d="M170,0 h29.27726856095326 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-29.27726856095326 z"/>
+<text class="val" x="209.27726856095325" y="15.0">104 ms ★</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 403 ms</title>
+<rect class="hit" x="0" y="27" width="520" height="28" />
+<text class="lbl" x="162" y="45.0" text-anchor="end">k3s in Lima</text>
+<path class="s2" d="M170,30 h125.17277726856096 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-125.17277726856096 z"/>
+<text class="val" x="305.17277726856094" y="45.0">403 ms</text></g><g class="bar" tabindex="0"><title>Apple container cluster: 873 ms</title>
+<rect class="hit" x="0" y="57" width="520" height="28" />
+<text class="lbl" x="162" y="75.0" text-anchor="end">Apple container cluster</text>
+<path class="s3" d="M170,60 h276.0 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-276.0 z"/>
+<text class="val" x="456.0" y="75.0">873 ms</text></g></svg></figure><figure class="panel"><figcaption><b>20 nginx pods → all Ready</b><span>lower is better</span></figcaption>
+<svg viewBox="0 0 520 90" role="img" aria-label="20 nginx pods → all Ready"><g class="bar" tabindex="0"><title>kvz (new): 0.28 s</title>
+<rect class="hit" x="0" y="-3" width="520" height="28" />
+<text class="lbl" x="162" y="15.0" text-anchor="end">kvz (new)</text>
+<path class="s1" d="M170,0 h76.82474226804125 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-76.82474226804125 z"/>
+<text class="val" x="256.82474226804123" y="15.0">0.28 s ★</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 0.97 s</title>
+<rect class="hit" x="0" y="27" width="520" height="28" />
+<text class="lbl" x="162" y="45.0" text-anchor="end">k3s in Lima</text>
+<path class="s2" d="M170,30 h276.0 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-276.0 z"/>
+<text class="val" x="456.0" y="45.0">0.97 s</text></g><g class="bar" tabindex="0"><title>Apple container cluster: 0.93 s</title>
+<rect class="hit" x="0" y="57" width="520" height="28" />
+<text class="lbl" x="162" y="75.0" text-anchor="end">Apple container cluster</text>
+<path class="s3" d="M170,60 h264.4536082474227 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-264.4536082474227 z"/>
+<text class="val" x="444.4536082474227" y="75.0">0.93 s</text></g></svg></figure><figure class="panel"><figcaption><b>50 nginx pods → all Ready</b><span>lower is better</span></figcaption>
+<svg viewBox="0 0 520 90" role="img" aria-label="50 nginx pods → all Ready"><g class="bar" tabindex="0"><title>kvz (new): 0.6 s</title>
+<rect class="hit" x="0" y="-3" width="520" height="28" />
+<text class="lbl" x="162" y="15.0" text-anchor="end">kvz (new)</text>
+<path class="s1" d="M170,0 h33.66816143497758 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-33.66816143497758 z"/>
+<text class="val" x="213.66816143497758" y="15.0">0.6 s ★</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 4.46 s</title>
+<rect class="hit" x="0" y="27" width="520" height="28" />
+<text class="lbl" x="162" y="45.0" text-anchor="end">k3s in Lima</text>
+<path class="s2" d="M170,30 h276.0 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-276.0 z"/>
+<text class="val" x="456.0" y="45.0">4.46 s</text></g><g class="bar" tabindex="0"><title>Apple container cluster: 4.32 s</title>
+<rect class="hit" x="0" y="57" width="520" height="28" />
+<text class="lbl" x="162" y="75.0" text-anchor="end">Apple container cluster</text>
+<path class="s3" d="M170,60 h267.2107623318386 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-267.2107623318386 z"/>
+<text class="val" x="447.2107623318386" y="75.0">4.32 s</text></g></svg></figure><figure class="panel"><figcaption><b>Host memory with 20 pods running</b><span>lower is better</span></figcaption>
+<svg viewBox="0 0 520 90" role="img" aria-label="Host memory with 20 pods running"><g class="bar" tabindex="0"><title>kvz (new): 1,598 MB</title>
+<rect class="hit" x="0" y="-3" width="520" height="28" />
+<text class="lbl" x="162" y="15.0" text-anchor="end">kvz (new)</text>
+<path class="s1" d="M170,0 h121.31309510473842 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-121.31309510473842 z"/>
+<text class="val" x="301.3130951047384" y="15.0">1,598 MB ★</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 3,571 MB</title>
+<rect class="hit" x="0" y="27" width="520" height="28" />
+<text class="lbl" x="162" y="45.0" text-anchor="end">k3s in Lima</text>
+<path class="s2" d="M170,30 h276.0 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-276.0 z"/>
+<text class="val" x="456.0" y="45.0">3,571 MB</text></g><g class="bar" tabindex="0"><title>Apple container cluster: 3,196 MB</title>
+<rect class="hit" x="0" y="57" width="520" height="28" />
+<text class="lbl" x="162" y="75.0" text-anchor="end">Apple container cluster</text>
+<path class="s3" d="M170,60 h246.62619020947685 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-246.62619020947685 z"/>
+<text class="val" x="426.6261902094768" y="75.0">3,196 MB</text></g></svg></figure><figure class="panel"><figcaption><b>Delete 20 pods → gone</b><span>lower is better</span></figcaption>
+<svg viewBox="0 0 520 90" role="img" aria-label="Delete 20 pods → gone"><g class="bar" tabindex="0"><title>kvz (new): 0.06 s</title>
+<rect class="hit" x="0" y="-3" width="520" height="28" />
+<text class="lbl" x="162" y="15.0" text-anchor="end">kvz (new)</text>
+<path class="s1" d="M170,0 h10.867256637168143 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-10.867256637168143 z"/>
+<text class="val" x="190.86725663716814" y="15.0">0.06 s ★</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 1.07 s</title>
+<rect class="hit" x="0" y="27" width="520" height="28" />
+<text class="lbl" x="162" y="45.0" text-anchor="end">k3s in Lima</text>
+<path class="s2" d="M170,30 h261.1327433628319 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-261.1327433628319 z"/>
+<text class="val" x="441.1327433628319" y="45.0">1.07 s</text></g><g class="bar" tabindex="0"><title>Apple container cluster: 1.13 s</title>
+<rect class="hit" x="0" y="57" width="520" height="28" />
+<text class="lbl" x="162" y="75.0" text-anchor="end">Apple container cluster</text>
+<path class="s3" d="M170,60 h276.0 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-276.0 z"/>
+<text class="val" x="456.0" y="75.0">1.13 s</text></g></svg></figure><figure class="panel"><figcaption><b>API creates / s</b><span>higher is better</span></figcaption>
+<svg viewBox="0 0 520 90" role="img" aria-label="API creates / s"><g class="bar" tabindex="0"><title>kvz (new): 15,725 ops/s</title>
+<rect class="hit" x="0" y="-3" width="520" height="28" />
+<text class="lbl" x="162" y="15.0" text-anchor="end">kvz (new)</text>
+<path class="s1" d="M170,0 h276.0 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-276.0 z"/>
+<text class="val" x="456.0" y="15.0">15,725 ops/s ★</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 4,500 ops/s</title>
+<rect class="hit" x="0" y="27" width="520" height="28" />
+<text class="lbl" x="162" y="45.0" text-anchor="end">k3s in Lima</text>
+<path class="s2" d="M170,30 h76.13608903020668 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-76.13608903020668 z"/>
+<text class="val" x="256.1360890302067" y="45.0">4,500 ops/s</text></g><g class="bar" tabindex="0"><title>Apple container cluster: 8,826 ops/s</title>
+<rect class="hit" x="0" y="57" width="520" height="28" />
+<text class="lbl" x="162" y="75.0" text-anchor="end">Apple container cluster</text>
+<path class="s3" d="M170,60 h153.15612082670907 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-153.15612082670907 z"/>
+<text class="val" x="333.15612082670907" y="75.0">8,826 ops/s</text></g></svg></figure><figure class="panel"><figcaption><b>API gets / s</b><span>higher is better</span></figcaption>
+<svg viewBox="0 0 520 90" role="img" aria-label="API gets / s"><g class="bar" tabindex="0"><title>kvz (new): 24,709 ops/s</title>
+<rect class="hit" x="0" y="-3" width="520" height="28" />
+<text class="lbl" x="162" y="15.0" text-anchor="end">kvz (new)</text>
+<path class="s1" d="M170,0 h276.0 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-276.0 z"/>
+<text class="val" x="456.0" y="15.0">24,709 ops/s ★</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 15,558 ops/s</title>
+<rect class="hit" x="0" y="27" width="520" height="28" />
+<text class="lbl" x="162" y="45.0" text-anchor="end">k3s in Lima</text>
+<path class="s2" d="M170,30 h172.30175239791168 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-172.30175239791168 z"/>
+<text class="val" x="352.3017523979117" y="45.0">15,558 ops/s</text></g><g class="bar" tabindex="0"><title>Apple container cluster: 14,988 ops/s</title>
+<rect class="hit" x="0" y="57" width="520" height="28" />
+<text class="lbl" x="162" y="75.0" text-anchor="end">Apple container cluster</text>
+<path class="s3" d="M170,60 h165.83690153385407 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-165.83690153385407 z"/>
+<text class="val" x="345.8369015338541" y="75.0">14,988 ops/s</text></g></svg></figure><figure class="panel"><figcaption><b>Create → watch event p50</b><span>lower is better</span></figcaption>
+<svg viewBox="0 0 520 90" role="img" aria-label="Create → watch event p50"><g class="bar" tabindex="0"><title>kvz (new): 0.42 ms</title>
+<rect class="hit" x="0" y="-3" width="520" height="28" />
+<text class="lbl" x="162" y="15.0" text-anchor="end">kvz (new)</text>
+<path class="s1" d="M170,0 h139.41463414634146 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-139.41463414634146 z"/>
+<text class="val" x="319.4146341463414" y="15.0">0.42 ms ★</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 0.82 ms</title>
+<rect class="hit" x="0" y="27" width="520" height="28" />
+<text class="lbl" x="162" y="45.0" text-anchor="end">k3s in Lima</text>
+<path class="s2" d="M170,30 h276.0 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-276.0 z"/>
+<text class="val" x="456.0" y="45.0">0.82 ms</text></g><g class="bar" tabindex="0"><title>Apple container cluster: 0.65 ms</title>
+<rect class="hit" x="0" y="57" width="520" height="28" />
+<text class="lbl" x="162" y="75.0" text-anchor="end">Apple container cluster</text>
+<path class="s3" d="M170,60 h217.95121951219514 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-217.95121951219514 z"/>
+<text class="val" x="397.95121951219517" y="75.0">0.65 ms</text></g></svg></figure><figure class="panel"><figcaption><b>API create p99</b><span>lower is better</span></figcaption>
+<svg viewBox="0 0 520 90" role="img" aria-label="API create p99"><g class="bar" tabindex="0"><title>kvz (new): 7.71 ms</title>
+<rect class="hit" x="0" y="-3" width="520" height="28" />
+<text class="lbl" x="162" y="15.0" text-anchor="end">kvz (new)</text>
+<path class="s1" d="M170,0 h27.566018423746165 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-27.566018423746165 z"/>
+<text class="val" x="207.56601842374616" y="15.0">7.71 ms ★</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 68.39 ms</title>
+<rect class="hit" x="0" y="27" width="520" height="28" />
+<text class="lbl" x="162" y="45.0" text-anchor="end">k3s in Lima</text>
+<path class="s2" d="M170,30 h276.0 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-276.0 z"/>
+<text class="val" x="456.0" y="45.0">68.39 ms</text></g><g class="bar" tabindex="0"><title>Apple container cluster: 9.95 ms</title>
+<rect class="hit" x="0" y="57" width="520" height="28" />
+<text class="lbl" x="162" y="75.0" text-anchor="end">Apple container cluster</text>
+<path class="s3" d="M170,60 h36.73694984646878 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-36.73694984646878 z"/>
+<text class="val" x="216.73694984646878" y="75.0">9.95 ms</text></g></svg></figure></div>
+<details><summary>Table view (all hosts)</summary><table><tr><th>metric</th><th>platform</th><th>amelias-mini</th><th>dereks-mac-mini</th><th>lexies-mac-mini</th><th>studio</th></tr><tr><td>Restart → API ready (s)</td><td>kvz (new)</td><td>2.22</td><td>3.97</td><td>1.75</td><td>1.42</td></tr><tr><td>Restart → API ready (s)</td><td>k3s in Lima</td><td>9.24</td><td>9.36</td><td>9.31</td><td>9.13</td></tr><tr><td>Restart → API ready (s)</td><td>kvz v1 (Apple daemon)</td><td>2.13</td><td>1.82</td><td>2.11</td><td>2.12</td></tr><tr><td>Idle memory (phys footprint) (MB)</td><td>kvz (new)</td><td>252</td><td>248</td><td>267</td><td>277</td></tr><tr><td>Idle memory (phys footprint) (MB)</td><td>k3s in Lima</td><td>3,194</td><td>3,192</td><td>3,169</td><td>2,782</td></tr><tr><td>Idle memory (phys footprint) (MB)</td><td>Apple container cluster</td><td>2,446</td><td>2,453</td><td>2,473</td><td>2,598</td></tr><tr><td>Idle CPU (% core)</td><td>kvz (new)</td><td>1.66</td><td>1.9</td><td>1.63</td><td>1.1</td></tr><tr><td>Idle CPU (% core)</td><td>k3s in Lima</td><td>20.83</td><td>20.08</td><td>20.04</td><td>9.88</td></tr><tr><td>Idle CPU (% core)</td><td>Apple container cluster</td><td>27.54</td><td>26.1</td><td>25.66</td><td>14.23</td></tr><tr><td>1 nginx pod → Ready (ms)</td><td>kvz (new)</td><td>103</td><td>213</td><td>103</td><td>104</td></tr><tr><td>1 nginx pod → Ready (ms)</td><td>k3s in Lima</td><td>421</td><td>421</td><td>400</td><td>403</td></tr><tr><td>1 nginx pod → Ready (ms)</td><td>Apple container cluster</td><td>859</td><td>857</td><td>860</td><td>873</td></tr><tr><td>20 nginx pods → all Ready (s)</td><td>kvz (new)</td><td>0.41</td><td>3.33</td><td>0.42</td><td>0.28</td></tr><tr><td>20 nginx pods → all Ready (s)</td><td>k3s in Lima</td><td>1.31</td><td>1.3</td><td>1.1</td><td>0.97</td></tr><tr><td>20 nginx pods → all Ready (s)</td><td>Apple container cluster</td><td>0.88</td><td>0.88</td><td>0.89</td><td>0.93</td></tr><tr><td>50 nginx pods → all Ready (s)</td><td>kvz (new)</td><td>1.3</td><td>4.25</td><td>0.91</td><td>0.6</td></tr><tr><td>50 nginx pods → all Ready (s)</td><td>k3s in Lima</td><td>4.8</td><td>4.48</td><td>4.47</td><td>4.46</td></tr><tr><td>50 nginx pods → all Ready (s)</td><td>Apple container cluster</td><td>4.19</td><td>4.28</td><td>4.2</td><td>4.32</td></tr><tr><td>Host memory with 20 pods running (MB)</td><td>kvz (new)</td><td>1,585</td><td>1,338</td><td>1,611</td><td>1,598</td></tr><tr><td>Host memory with 20 pods running (MB)</td><td>k3s in Lima</td><td>3,724</td><td>3,782</td><td>3,773</td><td>3,571</td></tr><tr><td>Host memory with 20 pods running (MB)</td><td>Apple container cluster</td><td>3,009</td><td>3,017</td><td>2,976</td><td>3,196</td></tr><tr><td>Delete 20 pods → gone (s)</td><td>kvz (new)</td><td>0.1</td><td>1.29</td><td>0.1</td><td>0.06</td></tr><tr><td>Delete 20 pods → gone (s)</td><td>k3s in Lima</td><td>0.81</td><td>0.81</td><td>1.03</td><td>1.07</td></tr><tr><td>Delete 20 pods → gone (s)</td><td>Apple container cluster</td><td>1.18</td><td>1.19</td><td>1.18</td><td>1.13</td></tr><tr><td>API creates / s (ops/s)</td><td>kvz (new)</td><td>9,442</td><td>6,012</td><td>11,402</td><td>15,725</td></tr><tr><td>API creates / s (ops/s)</td><td>k3s in Lima</td><td>3,200</td><td>2,915</td><td>3,989</td><td>4,500</td></tr><tr><td>API creates / s (ops/s)</td><td>Apple container cluster</td><td>7,974</td><td>8,007</td><td>7,732</td><td>8,826</td></tr><tr><td>API gets / s (ops/s)</td><td>kvz (new)</td><td>18,643</td><td>18,205</td><td>23,339</td><td>24,709</td></tr><tr><td>API gets / s (ops/s)</td><td>k3s in Lima</td><td>9,854</td><td>9,939</td><td>12,954</td><td>15,558</td></tr><tr><td>API gets / s (ops/s)</td><td>Apple container cluster</td><td>14,848</td><td>15,238</td><td>15,044</td><td>14,988</td></tr><tr><td>Create → watch event p50 (ms)</td><td>kvz (new)</td><td>0.42</td><td>0.43</td><td>0.41</td><td>0.42</td></tr><tr><td>Create → watch event p50 (ms)</td><td>k3s in Lima</td><td>0.84</td><td>0.92</td><td>0.79</td><td>0.82</td></tr><tr><td>Create → watch event p50 (ms)</td><td>Apple container cluster</td><td>0.53</td><td>0.52</td><td>0.52</td><td>0.65</td></tr><tr><td>API create p99 (ms)</td><td>kvz (new)</td><td>14.17</td><td>157</td><td>12.52</td><td>7.71</td></tr><tr><td>API create p99 (ms)</td><td>k3s in Lima</td><td>70.83</td><td>85.31</td><td>69.61</td><td>68.39</td></tr><tr><td>API create p99 (ms)</td><td>Apple container cluster</td><td>14.03</td><td>12.24</td><td>12.84</td><td>9.95</td></tr></table></details>
+</div></body></html>

@@ -49,6 +49,10 @@ type Backend struct {
 
 	mu   sync.Mutex
 	pods map[string]*pod
+
+	// slots caps concurrently running pod VMs below Virtualization.framework's
+	// per-host limit (~127, measured): beyond it VZ fails VM starts outright.
+	slots chan struct{}
 }
 
 type pod struct {
@@ -87,9 +91,13 @@ func New(dataDir string, t *rt.Tracker, vols *volumes.Materializer, pn *podnet.N
 	if err != nil {
 		return nil, err
 	}
+	maxVMs := 120
+	if v, err := strconv.Atoi(os.Getenv("KVZ_MAX_VMS")); err == nil && v > 0 {
+		maxVMs = v
+	}
 	return &Backend{dir: filepath.Join(dataDir, "mvm"), kernel: DefaultKernel(), initrd: initrd, t: t, vols: vols,
 		images: image.NewStore(filepath.Join(home, ".kvz", "images")), pnet: pn, dns: []string{pn.GW.String()},
-		pods: map[string]*pod{}}, nil
+		pods: map[string]*pod{}, slots: make(chan struct{}, maxVMs)}, nil
 }
 
 func (b *Backend) Handler() string { return "linux" }
@@ -322,6 +330,21 @@ func memMB(p *corev1.Pod) uint64 {
 }
 
 func (b *Backend) run(ctx context.Context, p *corev1.Pod, ps *pod) error {
+	select {
+	case b.slots <- struct{}{}:
+	default:
+		b.t.Update(p.Namespace, p.Name, func(s *corev1.PodStatus) {
+			for _, c := range p.Spec.Containers {
+				rt.SetWaiting(s, c.Name, "WaitingForVMSlot", fmt.Sprintf("node is at its microVM limit (%d)", cap(b.slots)))
+			}
+		})
+		select {
+		case b.slots <- struct{}{}:
+		case <-ctx.Done():
+			return nil
+		}
+	}
+	defer func() { <-b.slots }()
 	sp, shares, err := b.buildSpec(p, ps)
 	if err != nil {
 		return err

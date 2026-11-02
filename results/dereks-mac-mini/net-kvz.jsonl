@@ -1,0 +1,3 @@
+{"suite": "net", "label": "dereks-mac-mini/kvz", "streams": 1, "gbps": 49.08}
+{"suite": "net", "label": "dereks-mac-mini/kvz", "streams": 4, "gbps": 28.59}
+{"suite": "net", "label": "dereks-mac-mini/kvz", "ping": "round-trip min/avg/max = 0.091/0.509/0.761 ms"}

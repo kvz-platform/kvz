@@ -1,0 +1,3 @@
+{"suite": "net", "label": "lexies-mac-mini/apple-cluster", "streams": 1, "gbps": 86.38}
+{"suite": "net", "label": "lexies-mac-mini/apple-cluster", "streams": 4, "gbps": 163.58}
+{"suite": "net", "label": "lexies-mac-mini/apple-cluster", "ping": "round-trip min/avg/max = 0.016/0.062/0.127 ms"}

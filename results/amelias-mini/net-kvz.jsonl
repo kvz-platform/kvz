@@ -1,0 +1,3 @@
+{"suite": "net", "label": "amelias-mini/kvz", "streams": 1, "gbps": 30.39}
+{"suite": "net", "label": "amelias-mini/kvz", "streams": 4, "gbps": 22.46}
+{"suite": "net", "label": "amelias-mini/kvz", "ping": "round-trip min/avg/max = 0.139/0.331/0.500 ms"}

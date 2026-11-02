@@ -17,20 +17,20 @@ kvz `first` = fresh data dir (PKI + etcd init). lima-k3s `first` = boot of an ex
 
 | host | platform | first start → API ready | first start → node Ready | restart → API ready | restart → node Ready |
 |---|---|---|---|---|---|
-| amelias-mini | **kvz** | 3.85 s | 4.16 s | 2.43 s | 2.54 s |
-| amelias-mini | **kvz-v1** | 4.07 s | 4.39 s | 1.95 s | 1.98 s |
+| amelias-mini | **kvz** | 3.49 s | 3.87 s | 2.22 s | 2.24 s |
+| amelias-mini | **kvz-v1** | 4.34 s | 4.64 s | 2.13 s | 2.15 s |
 | amelias-mini | **lima-k3s** | 17.25 s | 17.28 s | 9.24 s | 9.27 s |
 | amelias-mini | **apple-cluster** | 58.76 s | 58.8 s | – | – |
-| dereks-mac-mini | **kvz** | 3.83 s | 4.18 s | 1.88 s | 1.9 s |
-| dereks-mac-mini | **kvz-v1** | 3.84 s | 4.14 s | 2.04 s | 2.07 s |
+| dereks-mac-mini | **kvz** | 12.87 s | 13.15 s | 3.97 s | 6.6 s |
+| dereks-mac-mini | **kvz-v1** | 4.06 s | 4.35 s | 1.82 s | 1.85 s |
 | dereks-mac-mini | **lima-k3s** | 18.02 s | 18.05 s | 9.36 s | 9.39 s |
 | dereks-mac-mini | **apple-cluster** | 58.64 s | 58.68 s | – | – |
-| lexies-mac-mini | **kvz** | 3.38 s | 3.75 s | 1.99 s | 2.09 s |
-| lexies-mac-mini | **kvz-v1** | 4.44 s | 4.76 s | 2.07 s | 2.1 s |
+| lexies-mac-mini | **kvz** | 3.65 s | 4.01 s | 1.75 s | 1.77 s |
+| lexies-mac-mini | **kvz-v1** | 4.66 s | 5.01 s | 2.11 s | 2.14 s |
 | lexies-mac-mini | **lima-k3s** | 17.81 s | 17.84 s | 9.31 s | 9.34 s |
 | lexies-mac-mini | **apple-cluster** | 57.12 s | 57.16 s | – | – |
-| studio | **kvz** | 2.55 s | 2.82 s | 2.36 s | 2.38 s |
-| studio | **kvz-v1** | 2.53 s | 2.82 s | 2.17 s | 2.19 s |
+| studio | **kvz** | 1.95 s | 2.21 s | 1.42 s | 1.51 s |
+| studio | **kvz-v1** | 2.17 s | 2.44 s | 2.12 s | 2.15 s |
 | studio | **lima-k3s** | 9.63 s | 9.66 s | 9.13 s | 9.17 s |
 | studio | **apple-cluster** | 58.92 s | 58.97 s | – | – |
 
@@ -40,20 +40,16 @@ Summed over the platform's host processes, including its VMs (guest memory actua
 
 | host | platform | CPU (% of one core) | phys footprint | RSS |
 |---|---|---|---|---|
-| amelias-mini | **kvz** | 1.76% | 257 MB | 200 MB |
-| amelias-mini | **kvz-v1** | 1.63% | 240 MB | 385 MB |
+| amelias-mini | **kvz** | 1.66% | 252 MB | 342 MB |
 | amelias-mini | **lima-k3s** | 20.83% | 3194 MB | 4749 MB |
 | amelias-mini | **apple-cluster** | 27.54% | 2446 MB | 3733 MB |
-| dereks-mac-mini | **kvz** | 1.46% | 261 MB | 336 MB |
-| dereks-mac-mini | **kvz-v1** | 1.5% | 366 MB | 1081 MB |
+| dereks-mac-mini | **kvz** | 1.9% | 248 MB | 168 MB |
 | dereks-mac-mini | **lima-k3s** | 20.08% | 3192 MB | 4734 MB |
 | dereks-mac-mini | **apple-cluster** | 26.1% | 2453 MB | 3763 MB |
-| lexies-mac-mini | **kvz** | 1.63% | 259 MB | 366 MB |
-| lexies-mac-mini | **kvz-v1** | 1.66% | 250 MB | 1076 MB |
+| lexies-mac-mini | **kvz** | 1.63% | 267 MB | 382 MB |
 | lexies-mac-mini | **lima-k3s** | 20.04% | 3169 MB | 4717 MB |
 | lexies-mac-mini | **apple-cluster** | 25.66% | 2473 MB | 3767 MB |
-| studio | **kvz** | 1.0% | 287 MB | 332 MB |
-| studio | **kvz-v1** | 0.9% | 279 MB | 351 MB |
+| studio | **kvz** | 1.1% | 277 MB | 329 MB |
 | studio | **lima-k3s** | 9.88% | 2782 MB | 4005 MB |
 | studio | **apple-cluster** | 14.23% | 2598 MB | 3871 MB |
 
@@ -61,20 +57,16 @@ Summed over the platform's host processes, including its VMs (guest memory actua
 
 | host | platform | create/s | create p99 | get/s | get+update/s | LIST 2000 p50 | create→watch p50 | delete/s |
 |---|---|---|---|---|---|---|---|---|
-| amelias-mini | **kvz** | 8049 | 49.41 ms | 19756 | 4790 | 6.23 ms | 0.47 ms | 8928 |
-| amelias-mini | **kvz-v1** | 3196 | 26.19 ms | 13187 | 1776 | 6.42 ms | 6.4 ms | 1672 |
+| amelias-mini | **kvz** | 9442 | 14.17 ms | 18643 | 5604 | 5.54 ms | 0.42 ms | 9564 |
 | amelias-mini | **lima-k3s** | 3200 | 70.83 ms | 9854 | 2341 | 8.53 ms | 0.84 ms | 2989 |
 | amelias-mini | **apple-cluster** | 7974 | 14.03 ms | 14848 | 4708 | 7.5 ms | 0.53 ms | 7360 |
-| dereks-mac-mini | **kvz** | 9859 | 12.34 ms | 20362 | 5756 | 5.06 ms | 0.38 ms | 9483 |
-| dereks-mac-mini | **kvz-v1** | 3272 | 21.98 ms | 14420 | 1822 | 5.56 ms | 5.96 ms | 1715 |
+| dereks-mac-mini | **kvz** | 6012 | 157 ms | 18205 | 4750 | 5.83 ms | 0.43 ms | 6872 |
 | dereks-mac-mini | **lima-k3s** | 2915 | 85.31 ms | 9939 | 2166 | 9.61 ms | 0.92 ms | 2887 |
 | dereks-mac-mini | **apple-cluster** | 8007 | 12.24 ms | 15238 | 4736 | 7.2 ms | 0.52 ms | 7304 |
-| lexies-mac-mini | **kvz** | 10576 | 12.56 ms | 20496 | 6276 | 4.2 ms | 0.41 ms | 10736 |
-| lexies-mac-mini | **kvz-v1** | 4022 | 21.19 ms | 16300 | 2050 | 4.42 ms | 5.48 ms | 1922 |
+| lexies-mac-mini | **kvz** | 11402 | 12.52 ms | 23339 | 5910 | 4.29 ms | 0.41 ms | 10089 |
 | lexies-mac-mini | **lima-k3s** | 3989 | 69.61 ms | 12954 | 2765 | 7.2 ms | 0.79 ms | 3698 |
 | lexies-mac-mini | **apple-cluster** | 7732 | 12.84 ms | 15044 | 4774 | 7.18 ms | 0.52 ms | 7192 |
-| studio | **kvz** | 14244 | 7.96 ms | 22794 | 5363 | 4.47 ms | 0.41 ms | 11024 |
-| studio | **kvz-v1** | 4526 | 17.43 ms | 9371 | 2273 | 4.97 ms | 4.0 ms | 2522 |
+| studio | **kvz** | 15725 | 7.71 ms | 24709 | 5106 | 4.19 ms | 0.42 ms | 10558 |
 | studio | **lima-k3s** | 4500 | 68.39 ms | 15558 | 3234 | 6.98 ms | 0.82 ms | 3799 |
 | studio | **apple-cluster** | 8826 | 9.95 ms | 14988 | 4923 | 6.4 ms | 0.65 ms | 7318 |
 
@@ -82,20 +74,16 @@ Summed over the platform's host processes, including its VMs (guest memory actua
 
 | host | platform | p50 | min | max |
 |---|---|---|---|---|
-| amelias-mini | **kvz** | 108 ms | 99.23 ms | 114 ms |
-| amelias-mini | **kvz-v1** | 756 ms | 736 ms | 774 ms |
+| amelias-mini | **kvz** | 103 ms | 101 ms | 111 ms |
 | amelias-mini | **lima-k3s** | 421 ms | 407 ms | 459 ms |
 | amelias-mini | **apple-cluster** | 859 ms | 850 ms | 877 ms |
-| dereks-mac-mini | **kvz** | 106 ms | 98.4 ms | 110 ms |
-| dereks-mac-mini | **kvz-v1** | 741 ms | 735 ms | 753 ms |
+| dereks-mac-mini | **kvz** | 213 ms | 101 ms | 811 ms |
 | dereks-mac-mini | **lima-k3s** | 421 ms | 416 ms | 432 ms |
 | dereks-mac-mini | **apple-cluster** | 857 ms | 842 ms | 875 ms |
-| lexies-mac-mini | **kvz** | 103 ms | 101 ms | 105 ms |
-| lexies-mac-mini | **kvz-v1** | 765 ms | 608 ms | 773 ms |
+| lexies-mac-mini | **kvz** | 103 ms | 99.42 ms | 104 ms |
 | lexies-mac-mini | **lima-k3s** | 400 ms | 395 ms | 410 ms |
 | lexies-mac-mini | **apple-cluster** | 860 ms | 855 ms | 871 ms |
-| studio | **kvz** | 99.6 ms | 96.17 ms | 101 ms |
-| studio | **kvz-v1** | 575 ms | 541 ms | 585 ms |
+| studio | **kvz** | 104 ms | 98.5 ms | 106 ms |
 | studio | **lima-k3s** | 403 ms | 398 ms | 718 ms |
 | studio | **apple-cluster** | 873 ms | 869 ms | 885 ms |
 
@@ -103,20 +91,16 @@ Summed over the platform's host processes, including its VMs (guest memory actua
 
 | host | platform | all Ready | pods/s | ready p50 | ready p99 | footprint w/ pods | teardown |
 |---|---|---|---|---|---|---|---|
-| amelias-mini | **kvz** | 0.63 s | 31.62 | 612 ms | 632 ms | 1535 MB | 0.21 s |
-| amelias-mini | **kvz-v1** | 12.96 s | 1.54 | 6840 ms | 12961 ms | 6251 MB | 3.07 s |
+| amelias-mini | **kvz** | 0.41 s | 49.17 | 343 ms | 407 ms | 1585 MB | 0.1 s |
 | amelias-mini | **lima-k3s** | 1.31 s | 15.24 | 1196 ms | 1312 ms | 3724 MB | 0.81 s |
 | amelias-mini | **apple-cluster** | 0.88 s | 22.69 | 863 ms | 880 ms | 3009 MB | 1.18 s |
-| dereks-mac-mini | **kvz** | 0.74 s | 27.08 | 622 ms | 739 ms | 1519 MB | 0.11 s |
-| dereks-mac-mini | **kvz-v1** | 12.23 s | 1.63 | 6174 ms | 12232 ms | 6987 MB | 2.82 s |
+| dereks-mac-mini | **kvz** | 3.33 s | 6.01 | 3321 ms | 3327 ms | 1338 MB | 1.29 s |
 | dereks-mac-mini | **lima-k3s** | 1.3 s | 15.33 | 1224 ms | 1304 ms | 3782 MB | 0.81 s |
 | dereks-mac-mini | **apple-cluster** | 0.88 s | 22.67 | 864 ms | 882 ms | 3017 MB | 1.19 s |
-| lexies-mac-mini | **kvz** | 0.37 s | 53.57 | 338 ms | 373 ms | 1550 MB | 0.12 s |
-| lexies-mac-mini | **kvz-v1** | 11.73 s | 1.7 | 5979 ms | 11734 ms | 6882 MB | 2.84 s |
+| lexies-mac-mini | **kvz** | 0.42 s | 47.79 | 335 ms | 418 ms | 1611 MB | 0.1 s |
 | lexies-mac-mini | **lima-k3s** | 1.1 s | 18.21 | 1032 ms | 1098 ms | 3773 MB | 1.03 s |
 | lexies-mac-mini | **apple-cluster** | 0.89 s | 22.42 | 871 ms | 892 ms | 2976 MB | 1.18 s |
-| studio | **kvz** | 0.26 s | 75.77 | 246 ms | 264 ms | 1552 MB | 0.06 s |
-| studio | **kvz-v1** | 9.81 s | 2.04 | 5060 ms | 9809 ms | 6959 MB | 4.38 s |
+| studio | **kvz** | 0.28 s | 71.29 | 274 ms | 280 ms | 1598 MB | 0.06 s |
 | studio | **lima-k3s** | 0.97 s | 20.71 | 885 ms | 965 ms | 3571 MB | 1.07 s |
 | studio | **apple-cluster** | 0.93 s | 21.56 | 903 ms | 926 ms | 3196 MB | 1.13 s |
 
@@ -124,87 +108,103 @@ Summed over the platform's host processes, including its VMs (guest memory actua
 
 | host | platform | all Ready | pods/s | ready p50 | ready p99 | footprint w/ pods | teardown |
 |---|---|---|---|---|---|---|---|
-| amelias-mini | **kvz** | 1.99 s | 25.14 | 1775 ms | 1988 ms | 3015 MB | 0.35 s |
-| amelias-mini | **kvz-v1** | 35.18 s | 1.42 | 15658 ms | 35177 ms | 14427 MB | 7.88 s |
+| amelias-mini | **kvz** | 1.3 s | 38.55 | 1035 ms | 1297 ms | 3400 MB | 0.24 s |
 | amelias-mini | **lima-k3s** | 4.8 s | 10.41 | 3801 ms | 4801 ms | 4415 MB | 4.22 s |
 | amelias-mini | **apple-cluster** | 4.19 s | 11.94 | 3187 ms | 4185 ms | 3498 MB | 3.72 s |
-| dereks-mac-mini | **kvz** | 1.53 s | 32.6 | 1409 ms | 1534 ms | 3167 MB | 0.28 s |
-| dereks-mac-mini | **kvz-v1** | 30.86 s | 1.62 | 15169 ms | 30853 ms | 14512 MB | 5.23 s |
+| dereks-mac-mini | **kvz** | 4.25 s | 11.77 | 4235 ms | 4246 ms | 2889 MB | 0.72 s |
 | dereks-mac-mini | **lima-k3s** | 4.48 s | 11.16 | 3481 ms | 4481 ms | 4390 MB | 3.81 s |
 | dereks-mac-mini | **apple-cluster** | 4.28 s | 11.69 | 3279 ms | 4278 ms | 3471 MB | 3.53 s |
-| lexies-mac-mini | **kvz** | 0.93 s | 53.89 | 794 ms | 928 ms | 3184 MB | 0.25 s |
-| lexies-mac-mini | **kvz-v1** | 30.18 s | 1.66 | 15068 ms | 30176 ms | 14551 MB | 7.13 s |
+| lexies-mac-mini | **kvz** | 0.91 s | 55.07 | 816 ms | 907 ms | 3412 MB | 0.21 s |
 | lexies-mac-mini | **lima-k3s** | 4.47 s | 11.2 | 3465 ms | 4465 ms | 4318 MB | 4.75 s |
 | lexies-mac-mini | **apple-cluster** | 4.2 s | 11.9 | 3194 ms | 4200 ms | 3494 MB | 3.73 s |
-| studio | **kvz** | 0.56 s | 89.24 | 534 ms | 560 ms | 3198 MB | 0.14 s |
-| studio | **kvz-v1** | 25.74 s | 1.94 | 13067 ms | 25736 ms | 16003 MB | 4.49 s |
+| studio | **kvz** | 0.6 s | 83.82 | 500 ms | 596 ms | 3431 MB | 0.16 s |
 | studio | **lima-k3s** | 4.46 s | 11.21 | 3458 ms | 4458 ms | 4390 MB | 3.93 s |
 | studio | **apple-cluster** | 4.32 s | 11.59 | 3312 ms | 4314 ms | 3763 MB | 3.46 s |
+
+## Burst: 100 nginx pods at once (kvz only)
+
+| host | platform | all Ready | pods/s | ready p50 | ready p99 | footprint w/ pods | teardown |
+|---|---|---|---|---|---|---|---|
+| amelias-mini | **kvz** | 3.38 s | 29.56 | 2804 ms | 3381 ms | 5407 MB | 0.95 s |
+| dereks-mac-mini | **kvz** | 6.75 s | 14.8 | 4642 ms | 6754 ms | 5394 MB | 3.33 s |
+| lexies-mac-mini | **kvz** | 2.27 s | 43.95 | 1762 ms | 2262 ms | 6439 MB | 0.89 s |
+| studio | **kvz** | 1.75 s | 57.06 | 1232 ms | 1741 ms | 6558 MB | 0.76 s |
 
 ## kvz darwin runtime: native processes, 200 pods
 
 | host | platform | all Ready | pods/s | ready p50 | ready p99 | footprint w/ pods | teardown |
 |---|---|---|---|---|---|---|---|
-| amelias-mini | **kvz** | 2.66 s | 75.24 | 1739 ms | 2350 ms | 643 MB | 2.45 s |
-| amelias-mini | **kvz-v1** | 1.64 s | 126 | 1032 ms | 1555 ms | 428 MB | 3.81 s |
-| dereks-mac-mini | **kvz** | 2.29 s | 87.49 | 1514 ms | 1970 ms | 610 MB | 2.25 s |
-| dereks-mac-mini | **kvz-v1** | 1.64 s | 130 | 1159 ms | 1495 ms | 452 MB | 3.76 s |
-| lexies-mac-mini | **kvz** | 2.0 s | 100 | 1256 ms | 1608 ms | 526 MB | 2.39 s |
-| lexies-mac-mini | **kvz-v1** | 1.52 s | 133 | 1186 ms | 1472 ms | 443 MB | 3.7 s |
-| studio | **kvz** | 2.58 s | 77.49 | 1438 ms | 1957 ms | 577 MB | 2.22 s |
-| studio | **kvz-v1** | 2.09 s | 98.34 | 1525 ms | 1962 ms | 494 MB | 3.63 s |
+| amelias-mini | **kvz** | 2.31 s | 86.74 | 1389 ms | 2136 ms | 516 MB | 2.23 s |
+| amelias-mini | **kvz-v1** | 1.36 s | 147 | 741 ms | 1246 ms | 364 MB | 3.82 s |
+| dereks-mac-mini | **kvz** | 2.31 s | 86.78 | 1302 ms | 1934 ms | 555 MB | 2.56 s |
+| dereks-mac-mini | **kvz-v1** | 1.22 s | 163 | 847 ms | 1133 ms | 367 MB | 3.8 s |
+| lexies-mac-mini | **kvz** | 2.09 s | 95.73 | 1716 ms | 2040 ms | 606 MB | 2.31 s |
+| lexies-mac-mini | **kvz-v1** | 1.35 s | 148 | 1010 ms | 1300 ms | 380 MB | 3.69 s |
+| studio | **kvz** | 3.2 s | 62.51 | 2436 ms | 2965 ms | 678 MB | 2.3 s |
+| studio | **kvz-v1** | 1.74 s | 115 | 1261 ms | 1566 ms | 443 MB | 3.62 s |
 
 ## kvz darwin runtime: native processes, 500 pods
 
 | host | platform | all Ready | pods/s | ready p50 | ready p99 | footprint w/ pods | teardown |
 |---|---|---|---|---|---|---|---|
-| amelias-mini | **kvz** | 6.99 s | 71.53 | 4097 ms | 5457 ms | 736 MB | 8.8 s |
+| amelias-mini | **kvz** | 6.44 s | 77.69 | 4414 ms | 6256 ms | 775 MB | 8.76 s |
 | amelias-mini | **kvz-v1** | 5.54 s | 90.17 | 2960 ms | 4097 ms | 480 MB | 9.87 s |
-| dereks-mac-mini | **kvz** | 6.65 s | 75.17 | 4009 ms | 5138 ms | 732 MB | 8.76 s |
+| dereks-mac-mini | **kvz** | 8.53 s | 58.63 | 4889 ms | 5985 ms | 718 MB | 10.13 s |
 | dereks-mac-mini | **kvz-v1** | 5.6 s | 89.3 | 3545 ms | 4681 ms | 520 MB | 9.85 s |
-| lexies-mac-mini | **kvz** | 5.77 s | 86.65 | 3565 ms | 4445 ms | 745 MB | 8.86 s |
+| lexies-mac-mini | **kvz** | 6.52 s | 76.68 | 3275 ms | 4841 ms | 746 MB | 8.88 s |
 | lexies-mac-mini | **kvz-v1** | 5.58 s | 89.61 | 2943 ms | 3966 ms | 467 MB | 9.83 s |
-| studio | **kvz** | 9.56 s | 52.3 | 6631 ms | 8211 ms | 749 MB | 8.68 s |
+| studio | **kvz** | 9.02 s | 55.43 | 5035 ms | 7298 ms | 799 MB | 8.57 s |
 | studio | **kvz-v1** | 7.97 s | 62.74 | 4430 ms | 7043 ms | 559 MB | 9.81 s |
 
 ## kvz darwin runtime: single pod create → Ready
 
 | host | platform | p50 | min | max |
 |---|---|---|---|---|
-| amelias-mini | **kvz** | 33.48 ms | 29.31 ms | 48.29 ms |
-| amelias-mini | **kvz-v1** | 53.3 ms | 47.75 ms | 61.28 ms |
-| dereks-mac-mini | **kvz** | 35.89 ms | 26.39 ms | 54.92 ms |
-| dereks-mac-mini | **kvz-v1** | 48.35 ms | 42.66 ms | 64.53 ms |
-| lexies-mac-mini | **kvz** | 37.37 ms | 34.05 ms | 65.03 ms |
-| lexies-mac-mini | **kvz-v1** | 55.53 ms | 36.52 ms | 61.52 ms |
-| studio | **kvz** | 31.62 ms | 22.42 ms | 47.91 ms |
-| studio | **kvz-v1** | 38.74 ms | 26.21 ms | 46.27 ms |
+| amelias-mini | **kvz** | 42.82 ms | 24.77 ms | 57.8 ms |
+| amelias-mini | **kvz-v1** | 53.98 ms | 51.53 ms | 59.93 ms |
+| dereks-mac-mini | **kvz** | 52.12 ms | 42.24 ms | 59.03 ms |
+| dereks-mac-mini | **kvz-v1** | 53.43 ms | 48.28 ms | 72.63 ms |
+| lexies-mac-mini | **kvz** | 38.62 ms | 35.81 ms | 59.53 ms |
+| lexies-mac-mini | **kvz-v1** | 53.57 ms | 27.29 ms | 59.1 ms |
+| studio | **kvz** | 34.13 ms | 23.65 ms | 52.89 ms |
+| studio | **kvz-v1** | 38.5 ms | 23.8 ms | 40.08 ms |
 
 ## kvz macos runtime: single macOS VM pod create → Ready (SSH up)
 
 | host | platform | p50 | min | max |
 |---|---|---|---|---|
-| amelias-mini | **kvz** | 48292 ms | 13735 ms | 85470 ms |
+| amelias-mini | **kvz** | 22563 ms | 19361 ms | 23316 ms |
 | amelias-mini | **kvz-v1** | 15948 ms | 11488 ms | 23033 ms |
-| dereks-mac-mini | **kvz** | 27514 ms | 20222 ms | 29626 ms |
+| dereks-mac-mini | **kvz** | 16592 ms | 15701 ms | 28366 ms |
 | dereks-mac-mini | **kvz-v1** | 19669 ms | 16980 ms | 22288 ms |
-| lexies-mac-mini | **kvz** | 18858 ms | 18116 ms | 22461 ms |
+| lexies-mac-mini | **kvz** | 19846 ms | 17756 ms | 20978 ms |
 | lexies-mac-mini | **kvz-v1** | 17761 ms | 15292 ms | 18155 ms |
-| studio | **kvz** | 19617 ms | 11935 ms | 21295 ms |
-| studio | **kvz-v1** | 18833 ms | 16142 ms | 22259 ms |
+| studio | **kvz** | 16242 ms | 14658 ms | 20864 ms |
+| studio | **kvz-v1** | 21691 ms | 17733 ms | 21788 ms |
 
 ## kvz macos runtime: 2 macOS VMs at once
 
 | host | platform | all Ready | pods/s | ready p50 | ready p99 | footprint w/ pods | teardown |
 |---|---|---|---|---|---|---|---|
-| amelias-mini | **kvz** | 39.98 s | 0.05 | 38495 ms | 39982 ms | 8817 MB | 6.26 s |
+| amelias-mini | **kvz** | 13.13 s | 0.15 | 11540 ms | 13131 ms | 8930 MB | 1.52 s |
 | amelias-mini | **kvz-v1** | 24.98 s | 0.08 | 11697 ms | 24981 ms | 8807 MB | 6.47 s |
-| dereks-mac-mini | **kvz** | 22.92 s | 0.09 | 19230 ms | 22915 ms | 8754 MB | 5.51 s |
+| dereks-mac-mini | **kvz** | 41.88 s | 0.05 | 41670 ms | 41877 ms | 8954 MB | 1.52 s |
 | dereks-mac-mini | **kvz-v1** | 23.27 s | 0.09 | 11060 ms | 23266 ms | 8825 MB | 6.3 s |
-| lexies-mac-mini | **kvz** | 41.72 s | 0.05 | 24783 ms | 41724 ms | 8969 MB | 5.36 s |
+| lexies-mac-mini | **kvz** | 25.22 s | 0.08 | 21734 ms | 25220 ms | 8984 MB | 1.21 s |
 | lexies-mac-mini | **kvz-v1** | 22.98 s | 0.09 | 20488 ms | 22984 ms | 8813 MB | 6.3 s |
-| studio | **kvz** | 23.61 s | 0.08 | 18818 ms | 23610 ms | 17198 MB | 5.16 s |
-| studio | **kvz-v1** | 20.95 s | 0.1 | 16569 ms | 20949 ms | 16609 MB | 6.27 s |
+| studio | **kvz** | 20.44 s | 0.1 | 20241 ms | 20441 ms | 16961 MB | 1.15 s |
+| studio | **kvz-v1** | 17.95 s | 0.11 | 9810 ms | 17954 ms | 16098 MB | 6.3 s |
+
+## Pod-to-pod network (iperf3, alpine 3.18, same node)
+
+| host/platform | 1 stream | 4 streams | ping avg |
+|---|---|---|---|
+| amelias-mini/kvz | 30.39 Gbps | 22.46 Gbps | 0.331 ms |
+| dereks-mac-mini/kvz | 49.08 Gbps | 28.59 Gbps | 0.509 ms |
+| lexies-mac-mini/apple-cluster | 86.38 Gbps | 163.58 Gbps | 0.062 ms |
+| lexies-mac-mini/kvz | 53.95 Gbps | 28.58 Gbps | 0.454 ms |
+| lexies-mac-mini/lima-k3s | 83.88 Gbps | 110.27 Gbps | 0.098 ms |
+| studio/lima-k3s | – Gbps | – Gbps | 0.077 ms |
 
 ## Extra probes
 
@@ -217,4 +217,6 @@ Summed over the platform's host processes, including its VMs (guest memory actua
 {"suite": "macos-boot", "platform": "tart", "rep": 1, "clone_s": 0.043, "ip_s": 6.23, "ssh_s": 11.02, "ok": true, "host": "studio", "ts": "2026-11-02T07:21:06Z"}
 {"suite": "macos-boot", "platform": "tart", "rep": 2, "clone_s": 0.048, "ip_s": 6.16, "ssh_s": 10.0, "ok": true, "host": "studio", "ts": "2026-11-02T07:21:19Z"}
 {"suite": "macos-perf", "where": "host", "ncpu": 18, "sha256_16k_1t": "3207738.66k", "sha256_16k_mt": "43477985.88k", "dd_write_s": 0.348769903182983, "dd_read_s": 0.315750122070312, "host": "studio", "ts": "2026-11-02T07:22:25Z"}
+{"memcpy_GBps": 55.7, "ncpu": 4, "sha256_1t_MBps": 3064.7, "sha256_all_MBps": 12619.1, "suite": "cpubench", "where": "guest-4vcpu"}
+{"memcpy_GBps": 58.7, "ncpu": 18, "sha256_1t_MBps": 3149.4, "sha256_all_MBps": 44021.9, "suite": "cpubench", "where": "host-18cpu"}
 ```

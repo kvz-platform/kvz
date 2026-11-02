@@ -8,13 +8,20 @@ PLATS = ["kvz", "kvz-v1", "lima-k3s", "apple-cluster"]
 
 
 def load():
+    """Load every JSONL file; for run.py output keep only the latest run per
+    (host, platform): each run starts with a {"suite":"host"} record."""
     rows = []
     for f in glob.glob(os.path.join(ROOT, "*", "*.jsonl")):
+        recs = []
         for l in open(f):
             try:
-                rows.append(json.loads(l))
+                recs.append(json.loads(l))
             except Exception:
                 pass
+        starts = [i for i, r in enumerate(recs) if r.get("suite") == "host"]
+        if starts:
+            recs = recs[starts[-1]:]
+        rows.extend(recs)
     return rows
 
 
@@ -121,13 +128,30 @@ def main():
             ("footprint w/ pods", ("fp", " MB")), ("teardown", ("td", " s"))]
     table("Burst: 20 nginx pods at once", cols, burst("linux-nginx-20"))
     table("Burst: 50 nginx pods at once", cols, burst("linux-nginx-50"))
+    table("Burst: 100 nginx pods at once (kvz only)", cols, burst("linux-nginx-100"))
     table("kvz darwin runtime: native processes, 200 pods", cols, burst("darwin-sleep-200"))
     table("kvz darwin runtime: native processes, 500 pods", cols, burst("darwin-sleep-500"))
     table("kvz darwin runtime: single pod create → Ready", [("p50", ("p50", " ms")), ("min", ("min", " ms")), ("max", ("max", " ms"))], seq("darwin-sleep"))
     table("kvz macos runtime: single macOS VM pod create → Ready (SSH up)", [("p50", ("p50", " ms")), ("min", ("min", " ms")), ("max", ("max", " ms"))], seq("macos-vm"))
     table("kvz macos runtime: 2 macOS VMs at once", cols, burst("macos-vm-2"))
 
-    extra = [r for r in rows if r.get("suite") in ("container-scaling", "macos-boot", "macos-perf", "multinode", "net")]
+    # network
+    nets = [r for r in rows if r.get("suite") == "net"]
+    if nets:
+        out += ["## Pod-to-pod network (iperf3, alpine 3.18, same node)", "", "| host/platform | 1 stream | 4 streams | ping avg |", "|---|---|---|---|"]
+        by_label = defaultdict(dict)
+        for r in nets:
+            lab = r.get("label", "?")
+            if "streams" in r and "gbps" in r:
+                by_label[lab][r["streams"]] = r["gbps"]
+            if "ping" in r:
+                parts = r["ping"].split("=")
+                by_label[lab]["ping"] = parts[1].split("/")[1] + " ms" if len(parts) > 1 else "?"
+        for lab in sorted(by_label):
+            d = by_label[lab]
+            out.append(f"| {lab} | {d.get(1, '–')} Gbps | {d.get(4, '–')} Gbps | {d.get('ping', '–')} |")
+        out.append("")
+    extra = [r for r in rows if r.get("suite") in ("container-scaling", "macos-boot", "macos-perf", "multinode", "cpubench")]
     if extra:
         out += ["## Extra probes", "", "```"] + [json.dumps(r) for r in extra] + ["```", ""]
     open(os.path.join(ROOT, "SUMMARY.md"), "w").write("\n".join(out))

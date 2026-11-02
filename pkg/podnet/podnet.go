@@ -26,6 +26,7 @@ import (
 
 type Net struct {
 	vn     *virtualnetwork.VirtualNetwork
+	sw     *fastSwitch
 	Subnet *net.IPNet
 	GW     net.IP
 	MTU    int
@@ -78,6 +79,22 @@ func New(cidr string, mtu int) (*Net, error) {
 	// macOS guests) assigns from the bottom up.
 	n := &Net{vn: vn, Subnet: sn, GW: gw, MTU: mtu, used: map[uint32]bool{}, lo: base + size/2, hi: base + size - 2}
 	n.next = n.lo
+	if os.Getenv("KVZ_PODNET_SWITCH") != "gvisor" {
+		// kvz fast switch in front; the netstack hangs off an uplink port.
+		up, err := socketpair()
+		if err != nil {
+			return nil, err
+		}
+		n.sw = newFastSwitch()
+		n.sw.add(up[0], true)
+		f := os.NewFile(uintptr(up[1]), "podnet-uplink")
+		conn, err := net.FileConn(f)
+		f.Close()
+		if err != nil {
+			return nil, err
+		}
+		go func() { _ = vn.AcceptVfkit(context.Background(), namedConn{conn}) }()
+	}
 	return n, nil
 }
 
@@ -113,17 +130,36 @@ func (n *Net) Bits() int { o, _ := n.Subnet.Mask.Size(); return o }
 // Attach creates a NIC for one VM. It returns the VM-side file (hand it to
 // VZFileHandleNetworkDeviceAttachment) and plugs the other end into the switch
 // until ctx is cancelled.
-func (n *Net) Attach(ctx context.Context) (*os.File, error) {
+func socketpair() ([2]int, error) {
 	fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_DGRAM, 0)
+	if err != nil {
+		return [2]int{}, err
+	}
+	for _, fd := range fds {
+		// room for bursts of 64 KiB frames in both directions
+		_ = unix.SetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_SNDBUF, 1<<20)
+		_ = unix.SetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_RCVBUF, 4<<20)
+		unix.CloseOnExec(fd)
+	}
+	return [2]int{fds[0], fds[1]}, nil
+}
+
+func (n *Net) Attach(ctx context.Context) (*os.File, error) {
+	fds, err := socketpair()
 	if err != nil {
 		return nil, err
 	}
-	for _, fd := range fds {
-		// room for bursts of frames in both directions
-		_ = unix.SetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_SNDBUF, 256<<10)
-		_ = unix.SetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_RCVBUF, 1<<20)
-	}
 	vmSide := os.NewFile(uintptr(fds[0]), "pod-nic-vm")
+	if n.sw != nil {
+		port := n.sw.add(fds[1], false)
+		go func() {
+			<-ctx.Done()
+			n.sw.remove(port)
+			_ = unix.Shutdown(fds[1], unix.SHUT_RDWR) // wakes the port's blocked read
+			_ = unix.Close(fds[1])
+		}()
+		return vmSide, nil
+	}
 	hostFile := os.NewFile(uintptr(fds[1]), "pod-nic-host")
 	conn, err := net.FileConn(hostFile)
 	hostFile.Close()

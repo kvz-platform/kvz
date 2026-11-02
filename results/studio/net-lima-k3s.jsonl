@@ -1,0 +1,3 @@
+{"suite": "net", "label": "studio/lima-k3s", "streams": 1, "error": "'sum_received'", "iperf": "unable to cancel thread: Permission denied", "stderr": "command terminated with exit code 1\n"}
+{"suite": "net", "label": "studio/lima-k3s", "streams": 4, "error": "'sum_received'", "iperf": "unable to cancel thread: Permission denied", "stderr": "command terminated with exit code 1\n"}
+{"suite": "net", "label": "studio/lima-k3s", "ping": "round-trip min/avg/max = 0.042/0.077/0.137 ms"}

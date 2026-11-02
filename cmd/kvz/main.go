@@ -8,6 +8,8 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -30,6 +32,9 @@ import (
 )
 
 func main() {
+	if addr := os.Getenv("KVZ_PPROF"); addr != "" {
+		go func() { _ = http.ListenAndServe(addr, nil) }()
+	}
 	root := &cobra.Command{Use: "kvz", Short: "Native-macOS Kubernetes (k3s-style, single binary)", SilenceUsage: true}
 	root.AddCommand(serverCmd(), agentCmd(), versionCmd())
 	if err := root.Execute(); err != nil {

@@ -184,6 +184,7 @@ func (cp *ControlPlane) Run(ctx context.Context, ready chan<- struct{}) error {
 		"--watch-cache=true",
 		"--max-requests-inflight=800",
 		"--max-mutating-requests-inflight=400",
+		"--delete-collection-workers=16", // default 1: DeleteCollection deleted pods one by one
 	}
 	_ = d
 	api := apiapp.NewAPIServerCommand()

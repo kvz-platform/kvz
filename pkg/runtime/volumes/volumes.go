@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	authv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -147,7 +148,17 @@ func (m *Materializer) projected(pod *corev1.Pod, pv *corev1.ProjectedVolumeSour
 			if sa == "" {
 				sa = "default"
 			}
-			tr, err := m.Client.CoreV1().ServiceAccounts(pod.Namespace).CreateToken(context.Background(), sa, req, metav1.CreateOptions{})
+			// The Node authorizer learns pod->node bindings from an informer; right
+			// after scheduling it can still deny the request. Retry like the kubelet.
+			var tr *authv1.TokenRequest
+			var err error
+			for delay := 5 * time.Millisecond; ; delay *= 2 {
+				tr, err = m.Client.CoreV1().ServiceAccounts(pod.Namespace).CreateToken(context.Background(), sa, req, metav1.CreateOptions{})
+				if err == nil || delay > 2*time.Second {
+					break
+				}
+				time.Sleep(delay)
+			}
 			if err != nil {
 				return nil, fmt.Errorf("service account token: %w", err)
 			}

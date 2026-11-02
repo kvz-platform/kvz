@@ -26,7 +26,7 @@ import (
 // second and was the dominant source of pod-start latency in early runs.
 func fastLimiter() workqueue.TypedRateLimiter[any] {
 	return workqueue.NewTypedMaxOfRateLimiter[any](
-		workqueue.NewTypedItemExponentialFailureRateLimiter[any](5*time.Millisecond, 30*time.Second),
+		workqueue.NewTypedItemExponentialFailureRateLimiter[any](time.Millisecond, 30*time.Second),
 		&workqueue.TypedBucketRateLimiter[any]{Limiter: rate.NewLimiter(rate.Limit(2000), 5000)},
 	)
 }

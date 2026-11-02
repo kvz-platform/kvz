@@ -1,0 +1,71 @@
+# Bundled ingress controller (disable with: kvz server --disable traefik).
+# Exposed on the Mac at :80/:443 through kvz's host LoadBalancer.
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: traefik, namespace: kube-system}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata: {name: kvz-traefik}
+rules:
+- apiGroups: [""]
+  resources: [services, secrets, nodes, endpoints]
+  verbs: [get, list, watch]
+- apiGroups: [discovery.k8s.io]
+  resources: [endpointslices]
+  verbs: [get, list, watch]
+- apiGroups: [extensions, networking.k8s.io]
+  resources: [ingresses, ingressclasses]
+  verbs: [get, list, watch]
+- apiGroups: [extensions, networking.k8s.io]
+  resources: [ingresses/status]
+  verbs: [update]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata: {name: kvz-traefik}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: kvz-traefik}
+subjects: [{kind: ServiceAccount, name: traefik, namespace: kube-system}]
+---
+apiVersion: networking.k8s.io/v1
+kind: IngressClass
+metadata:
+  name: traefik
+  annotations: {ingressclass.kubernetes.io/is-default-class: "true"}
+spec: {controller: traefik.io/ingress-controller}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: traefik, namespace: kube-system, labels: {app: traefik}}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: traefik}}
+  template:
+    metadata: {labels: {app: traefik}}
+    spec:
+      serviceAccountName: traefik
+      containers:
+      - name: traefik
+        image: docker.io/library/traefik:v3.3
+        args:
+        - --entryPoints.web.address=:8000
+        - --entryPoints.websecure.address=:8443
+        - --providers.kubernetesingress
+        - --providers.kubernetesingress.ingressendpoint.ip=127.0.0.1
+        - --ping=true
+        - --log.level=INFO
+        ports:
+        - {name: web, containerPort: 8000}
+        - {name: websecure, containerPort: 8443}
+        readinessProbe: {httpGet: {path: /ping, port: 8080}, periodSeconds: 2}
+        resources: {limits: {cpu: "1", memory: 256Mi}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: traefik, namespace: kube-system}
+spec:
+  type: LoadBalancer
+  selector: {app: traefik}
+  ports:
+  - {name: web, port: 80, targetPort: web}
+  - {name: websecure, port: 443, targetPort: websecure}

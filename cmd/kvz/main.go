@@ -27,6 +27,9 @@ import (
 
 	"github.com/GrowlyX/kvz/pkg/controlplane"
 	"github.com/GrowlyX/kvz/pkg/join"
+	kubectlcmd "k8s.io/kubectl/pkg/cmd"
+
+	"github.com/GrowlyX/kvz/pkg/deploy"
 	"github.com/GrowlyX/kvz/pkg/metrics"
 	"github.com/GrowlyX/kvz/pkg/node"
 	"github.com/GrowlyX/kvz/pkg/pki"
@@ -39,10 +42,26 @@ func main() {
 		go func() { _ = http.ListenAndServe(addr, nil) }()
 	}
 	root := &cobra.Command{Use: "kvz", Short: "Native-macOS Kubernetes (k3s-style, single binary)", SilenceUsage: true}
-	root.AddCommand(serverCmd(), agentCmd(), versionCmd())
+	root.AddCommand(serverCmd(), agentCmd(), versionCmd(), kubectlCmd())
 	if err := root.Execute(); err != nil {
 		os.Exit(1)
 	}
+}
+
+// kubectlCmd embeds a version-matched kubectl (like `k3s kubectl`), defaulting
+// to the local kvz kubeconfig.
+func kubectlCmd() *cobra.Command {
+	c := &cobra.Command{Use: "kubectl", Short: "Run an embedded, version-matched kubectl", DisableFlagParsing: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if os.Getenv("KUBECONFIG") == "" {
+				home, _ := os.UserHomeDir()
+				os.Setenv("KUBECONFIG", filepath.Join(home, ".kvz", "kubeconfig.yaml"))
+			}
+			kc := kubectlcmd.NewDefaultKubectlCommand()
+			kc.SetArgs(args)
+			return kc.Execute()
+		}}
+	return c
 }
 
 func versionCmd() *cobra.Command {
@@ -109,6 +128,7 @@ func serverCmd() *cobra.Command {
 	var apiPort, etcdPort int
 	var disableAgent, noSync bool
 	var etcdSync string
+	var disable []string
 	var sans []string
 	home, _ := os.UserHomeDir()
 	c := &cobra.Command{
@@ -157,13 +177,28 @@ func serverCmd() *cobra.Command {
 			if err := bootstrap(ctx, cp.AdminKubeconfig); err != nil {
 				return err
 			}
+			disabled := map[string]bool{}
+			for _, d := range disable {
+				disabled[strings.TrimSpace(d)] = true
+			}
+			manifests := filepath.Join(nf.dataDir, "server", "manifests")
+			if err := deploy.WriteBundled(manifests, disabled); err != nil {
+				klog.ErrorS(err, "bundled manifests")
+			}
+			if cfg, err := clientcmd.BuildConfigFromFlags("", cp.AdminKubeconfig); err == nil {
+				go deploy.Run(ctx, cfg, manifests)
+			}
 			if adm, err := adminClient(cp.AdminKubeconfig); err == nil {
-				if err := storage.EnsureDefaultClass(ctx, adm); err != nil {
-					klog.ErrorS(err, "local-path storage class")
+				if !disabled["local-storage"] {
+					if err := storage.EnsureDefaultClass(ctx, adm); err != nil {
+						klog.ErrorS(err, "local-path storage class")
+					}
+					go storage.Run(ctx, adm, nf.name)
 				}
-				go storage.Run(ctx, adm, nf.name)
 				tls := func(n string) string { return filepath.Join(cp.CA.Dir, n) }
-				if ms, err := metrics.New(adm, tls("ca.crt"), tls("apiserver-kubelet-client.crt"), tls("apiserver-kubelet-client.key")); err == nil {
+				if disabled["metrics-server"] {
+					// skip
+				} else if ms, err := metrics.New(adm, tls("ca.crt"), tls("apiserver-kubelet-client.crt"), tls("apiserver-kubelet-client.key")); err == nil {
 					go func() {
 						if err := ms.Run(ctx, fmt.Sprintf(":%d", apiPort+4), tls("ca.crt"), tls("apiserver.crt"), tls("apiserver.key")); err != nil {
 							klog.ErrorS(err, "metrics API")
@@ -216,6 +251,7 @@ func serverCmd() *cobra.Command {
 	c.Flags().IntVar(&etcdPort, "etcd-port", 2379, "embedded etcd client port (peer uses +1)")
 	c.Flags().BoolVar(&disableAgent, "disable-agent", false, "do not run a local node")
 	c.Flags().BoolVar(&noSync, "etcd-unsafe-no-fsync", false, "benchmark knob: disable etcd fsync")
+	c.Flags().StringSliceVar(&disable, "disable", nil, "bundled components to skip: traefik, local-storage, metrics-server")
 	c.Flags().StringVar(&etcdSync, "etcd-sync", "barrier", "etcd WAL sync on macOS: full (F_FULLFSYNC), barrier (F_BARRIERFSYNC, crash-consistent), none")
 	c.Flags().StringSliceVar(&sans, "tls-san", nil, "extra apiserver SANs")
 	return c

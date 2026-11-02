@@ -1,6 +1,15 @@
 BIN ?= bin/kvz
 GOFLAGS ?= -trimpath
-LDFLAGS ?= -s -w
+K8S_VERSION ?= v1.35.6
+KVZ_COMMIT := $(shell git rev-parse HEAD 2>/dev/null || echo unknown)
+BUILD_DATE := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+VPKG := k8s.io/component-base/version
+CPKG := k8s.io/client-go/pkg/version
+VFLAGS := -X $(VPKG).gitVersion=$(K8S_VERSION)+kvz -X $(VPKG).gitMajor=1 -X $(VPKG).gitMinor=35 \
+	-X $(VPKG).gitCommit=$(KVZ_COMMIT) -X $(VPKG).gitTreeState=clean -X $(VPKG).buildDate=$(BUILD_DATE) \
+	-X $(CPKG).gitVersion=$(K8S_VERSION)+kvz -X $(CPKG).gitMajor=1 -X $(CPKG).gitMinor=35 \
+	-X $(CPKG).gitCommit=$(KVZ_COMMIT) -X $(CPKG).gitTreeState=clean -X $(CPKG).buildDate=$(BUILD_DATE)
+LDFLAGS ?= -s -w $(VFLAGS)
 INIT := pkg/runtime/microvmrt/kvz-init
 
 .PHONY: build init bench clean

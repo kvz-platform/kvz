@@ -1,3 +1,3 @@
-{"suite": "net", "label": "lexies-mac-mini/kvz", "streams": 1, "gbps": 53.95}
-{"suite": "net", "label": "lexies-mac-mini/kvz", "streams": 4, "gbps": 28.58}
-{"suite": "net", "label": "lexies-mac-mini/kvz", "ping": "round-trip min/avg/max = 0.120/0.454/0.712 ms"}
+{"suite": "net", "label": "lexies-mac-mini/kvz", "streams": 1, "gbps": 52.46}
+{"suite": "net", "label": "lexies-mac-mini/kvz", "streams": 4, "gbps": 28.28}
+{"suite": "net", "label": "lexies-mac-mini/kvz", "ping": "round-trip min/avg/max = 0.115/0.385/0.575 ms"}

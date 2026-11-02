@@ -31,11 +31,11 @@ details { margin-top:24px; }
 Every kvz Linux pod is its own cold-booted VM; no pools, snapshots or pre-started pods.</p>
 <div class="legend"><span class="key"><i class="s1"></i>kvz (new)</span><span class="key"><i class="s2"></i>k3s in Lima</span><span class="key"><i class="s3"></i>Apple container cluster</span><span class="key"><i class="s4"></i>kvz v1 (Apple daemon)</span></div>
 <h2>M4 Mac mini (median of 3)</h2><div class="grid"><figure class="panel"><figcaption><b>Restart → API ready</b><span>lower is better</span></figcaption>
-<svg viewBox="0 0 520 90" role="img" aria-label="Restart → API ready"><g class="bar" tabindex="0"><title>kvz (new): 2.22 s</title>
+<svg viewBox="0 0 520 90" role="img" aria-label="Restart → API ready"><g class="bar" tabindex="0"><title>kvz (new): 1.73 s</title>
 <rect class="hit" x="0" y="-3" width="520" height="28" />
 <text class="lbl" x="162" y="15.0" text-anchor="end">kvz (new)</text>
-<path class="s1" d="M170,0 h62.76691729323308 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-62.76691729323308 z"/>
-<text class="val" x="242.76691729323306" y="15.0">2.22 s</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 9.31 s</title>
+<path class="s1" d="M170,0 h48.03007518796992 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-48.03007518796992 z"/>
+<text class="val" x="228.0300751879699" y="15.0">1.73 s ★</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 9.31 s</title>
 <rect class="hit" x="0" y="27" width="520" height="28" />
 <text class="lbl" x="162" y="45.0" text-anchor="end">k3s in Lima</text>
 <path class="s2" d="M170,30 h276.0 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-276.0 z"/>
@@ -43,12 +43,12 @@ Every kvz Linux pod is its own cold-booted VM; no pools, snapshots or pre-starte
 <rect class="hit" x="0" y="57" width="520" height="28" />
 <text class="lbl" x="162" y="75.0" text-anchor="end">kvz v1 (Apple daemon)</text>
 <path class="s4" d="M170,60 h59.458646616541344 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-59.458646616541344 z"/>
-<text class="val" x="239.45864661654133" y="75.0">2.11 s ★</text></g></svg></figure><figure class="panel"><figcaption><b>Idle memory (phys footprint)</b><span>lower is better</span></figcaption>
-<svg viewBox="0 0 520 120" role="img" aria-label="Idle memory (phys footprint)"><g class="bar" tabindex="0"><title>kvz (new): 252 MB</title>
+<text class="val" x="239.45864661654133" y="75.0">2.11 s</text></g></svg></figure><figure class="panel"><figcaption><b>Idle memory (phys footprint)</b><span>lower is better</span></figcaption>
+<svg viewBox="0 0 520 120" role="img" aria-label="Idle memory (phys footprint)"><g class="bar" tabindex="0"><title>kvz (new): 257 MB</title>
 <rect class="hit" x="0" y="-3" width="520" height="28" />
 <text class="lbl" x="162" y="15.0" text-anchor="end">kvz (new)</text>
-<path class="s1" d="M170,0 h18.082406391978694 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-18.082406391978694 z"/>
-<text class="val" x="198.08240639197868" y="15.0">252 MB</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 3,192 MB</title>
+<path class="s1" d="M170,0 h18.512298292339025 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-18.512298292339025 z"/>
+<text class="val" x="198.51229829233904" y="15.0">257 MB</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 3,192 MB</title>
 <rect class="hit" x="0" y="27" width="520" height="28" />
 <text class="lbl" x="162" y="45.0" text-anchor="end">k3s in Lima</text>
 <path class="s2" d="M170,30 h276.0 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-276.0 z"/>
@@ -61,11 +61,11 @@ Every kvz Linux pod is its own cold-booted VM; no pools, snapshots or pre-starte
 <text class="lbl" x="162" y="105.0" text-anchor="end">kvz v1 (Apple daemon)</text>
 <path class="s4" d="M170,90 h17.92448691837694 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-17.92448691837694 z"/>
 <text class="val" x="197.92448691837694" y="105.0">250 MB ★</text></g></svg></figure><figure class="panel"><figcaption><b>Idle CPU</b><span>lower is better</span></figcaption>
-<svg viewBox="0 0 520 120" role="img" aria-label="Idle CPU"><g class="bar" tabindex="0"><title>kvz (new): 1.66 % core</title>
+<svg viewBox="0 0 520 120" role="img" aria-label="Idle CPU"><g class="bar" tabindex="0"><title>kvz (new): 1.6 % core</title>
 <rect class="hit" x="0" y="-3" width="520" height="28" />
 <text class="lbl" x="162" y="15.0" text-anchor="end">kvz (new)</text>
-<path class="s1" d="M170,0 h13.808429118773944 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-13.808429118773944 z"/>
-<text class="val" x="193.80842911877394" y="15.0">1.66 % core</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 20.08 % core</title>
+<path class="s1" d="M170,0 h13.164750957854405 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-13.164750957854405 z"/>
+<text class="val" x="193.1647509578544" y="15.0">1.6 % core ★</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 20.08 % core</title>
 <rect class="hit" x="0" y="27" width="520" height="28" />
 <text class="lbl" x="162" y="45.0" text-anchor="end">k3s in Lima</text>
 <path class="s2" d="M170,30 h211.41762452107278 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-211.41762452107278 z"/>
@@ -77,12 +77,12 @@ Every kvz Linux pod is its own cold-booted VM; no pools, snapshots or pre-starte
 <rect class="hit" x="0" y="87" width="520" height="28" />
 <text class="lbl" x="162" y="105.0" text-anchor="end">kvz v1 (Apple daemon)</text>
 <path class="s4" d="M170,90 h13.486590038314173 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-13.486590038314173 z"/>
-<text class="val" x="193.48659003831418" y="105.0">1.63 % core ★</text></g></svg></figure><figure class="panel"><figcaption><b>1 nginx pod → Ready</b><span>lower is better</span></figcaption>
-<svg viewBox="0 0 520 120" role="img" aria-label="1 nginx pod → Ready"><g class="bar" tabindex="0"><title>kvz (new): 103 ms</title>
+<text class="val" x="193.48659003831418" y="105.0">1.63 % core</text></g></svg></figure><figure class="panel"><figcaption><b>1 nginx pod → Ready</b><span>lower is better</span></figcaption>
+<svg viewBox="0 0 520 120" role="img" aria-label="1 nginx pod → Ready"><g class="bar" tabindex="0"><title>kvz (new): 98.85 ms</title>
 <rect class="hit" x="0" y="-3" width="520" height="28" />
 <text class="lbl" x="162" y="15.0" text-anchor="end">kvz (new)</text>
-<path class="s1" d="M170,0 h29.58957351486589 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-29.58957351486589 z"/>
-<text class="val" x="209.5895735148659" y="15.0">103 ms ★</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 421 ms</title>
+<path class="s1" d="M170,0 h28.208064234595916 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-28.208064234595916 z"/>
+<text class="val" x="208.20806423459592" y="15.0">98.85 ms ★</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 421 ms</title>
 <rect class="hit" x="0" y="27" width="520" height="28" />
 <text class="lbl" x="162" y="45.0" text-anchor="end">k3s in Lima</text>
 <path class="s2" d="M170,30 h133.17344504567404 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-133.17344504567404 z"/>
@@ -95,11 +95,11 @@ Every kvz Linux pod is its own cold-booted VM; no pools, snapshots or pre-starte
 <text class="lbl" x="162" y="105.0" text-anchor="end">kvz v1 (Apple daemon)</text>
 <path class="s4" d="M170,90 h242.17908884622096 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-242.17908884622096 z"/>
 <text class="val" x="422.17908884622096" y="105.0">756 ms</text></g></svg></figure><figure class="panel"><figcaption><b>20 nginx pods → all Ready</b><span>lower is better</span></figcaption>
-<svg viewBox="0 0 520 120" role="img" aria-label="20 nginx pods → all Ready"><g class="bar" tabindex="0"><title>kvz (new): 0.42 s</title>
+<svg viewBox="0 0 520 120" role="img" aria-label="20 nginx pods → all Ready"><g class="bar" tabindex="0"><title>kvz (new): 0.44 s</title>
 <rect class="hit" x="0" y="-3" width="520" height="28" />
 <text class="lbl" x="162" y="15.0" text-anchor="end">kvz (new)</text>
-<path class="s1" d="M170,0 h5.615699100572362 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-5.615699100572362 z"/>
-<text class="val" x="185.61569910057236" y="15.0">0.42 s ★</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 1.3 s</title>
+<path class="s1" d="M170,0 h6.073589533932951 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-6.073589533932951 z"/>
+<text class="val" x="186.07358953393296" y="15.0">0.44 s ★</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 1.3 s</title>
 <rect class="hit" x="0" y="27" width="520" height="28" />
 <text class="lbl" x="162" y="45.0" text-anchor="end">k3s in Lima</text>
 <path class="s2" d="M170,30 h25.762878168438267 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-25.762878168438267 z"/>
@@ -112,11 +112,11 @@ Every kvz Linux pod is its own cold-booted VM; no pools, snapshots or pre-starte
 <text class="lbl" x="162" y="105.0" text-anchor="end">kvz v1 (Apple daemon)</text>
 <path class="s4" d="M170,90 h276.0 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-276.0 z"/>
 <text class="val" x="456.0" y="105.0">12.23 s</text></g></svg></figure><figure class="panel"><figcaption><b>50 nginx pods → all Ready</b><span>lower is better</span></figcaption>
-<svg viewBox="0 0 520 120" role="img" aria-label="50 nginx pods → all Ready"><g class="bar" tabindex="0"><title>kvz (new): 1.3 s</title>
+<svg viewBox="0 0 520 120" role="img" aria-label="50 nginx pods → all Ready"><g class="bar" tabindex="0"><title>kvz (new): 1.51 s</title>
 <rect class="hit" x="0" y="-3" width="520" height="28" />
 <text class="lbl" x="162" y="15.0" text-anchor="end">kvz (new)</text>
-<path class="s1" d="M170,0 h7.795204147764096 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-7.795204147764096 z"/>
-<text class="val" x="187.79520414776408" y="15.0">1.3 s ★</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 4.48 s</title>
+<path class="s1" d="M170,0 h9.700583279325988 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-9.700583279325988 z"/>
+<text class="val" x="189.700583279326" y="15.0">1.51 s ★</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 4.48 s</title>
 <rect class="hit" x="0" y="27" width="520" height="28" />
 <text class="lbl" x="162" y="45.0" text-anchor="end">k3s in Lima</text>
 <path class="s2" d="M170,30 h36.64808813998704 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-36.64808813998704 z"/>
@@ -129,11 +129,11 @@ Every kvz Linux pod is its own cold-booted VM; no pools, snapshots or pre-starte
 <text class="lbl" x="162" y="105.0" text-anchor="end">kvz v1 (Apple daemon)</text>
 <path class="s4" d="M170,90 h276.0 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-276.0 z"/>
 <text class="val" x="456.0" y="105.0">30.86 s</text></g></svg></figure><figure class="panel"><figcaption><b>Host memory with 20 pods running</b><span>lower is better</span></figcaption>
-<svg viewBox="0 0 520 120" role="img" aria-label="Host memory with 20 pods running"><g class="bar" tabindex="0"><title>kvz (new): 1,585 MB</title>
+<svg viewBox="0 0 520 120" role="img" aria-label="Host memory with 20 pods running"><g class="bar" tabindex="0"><title>kvz (new): 1,558 MB</title>
 <rect class="hit" x="0" y="-3" width="520" height="28" />
 <text class="lbl" x="162" y="15.0" text-anchor="end">kvz (new)</text>
-<path class="s1" d="M170,0 h60.49520488230165 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-60.49520488230165 z"/>
-<text class="val" x="240.49520488230166" y="15.0">1,585 MB ★</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 3,773 MB</title>
+<path class="s1" d="M170,0 h59.40482417901773 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-59.40482417901773 z"/>
+<text class="val" x="239.40482417901774" y="15.0">1,558 MB ★</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 3,773 MB</title>
 <rect class="hit" x="0" y="27" width="520" height="28" />
 <text class="lbl" x="162" y="45.0" text-anchor="end">k3s in Lima</text>
 <path class="s2" d="M170,30 h149.51583841906424 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-149.51583841906424 z"/>
@@ -146,11 +146,11 @@ Every kvz Linux pod is its own cold-booted VM; no pools, snapshots or pre-starte
 <text class="lbl" x="162" y="105.0" text-anchor="end">kvz v1 (Apple daemon)</text>
 <path class="s4" d="M170,90 h276.0 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-276.0 z"/>
 <text class="val" x="456.0" y="105.0">6,882 MB</text></g></svg></figure><figure class="panel"><figcaption><b>Delete 20 pods → gone</b><span>lower is better</span></figcaption>
-<svg viewBox="0 0 520 120" role="img" aria-label="Delete 20 pods → gone"><g class="bar" tabindex="0"><title>kvz (new): 0.1 s</title>
+<svg viewBox="0 0 520 120" role="img" aria-label="Delete 20 pods → gone"><g class="bar" tabindex="0"><title>kvz (new): 0.11 s</title>
 <rect class="hit" x="0" y="-3" width="520" height="28" />
 <text class="lbl" x="162" y="15.0" text-anchor="end">kvz (new)</text>
-<path class="s1" d="M170,0 h5.859154929577466 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-5.859154929577466 z"/>
-<text class="val" x="185.85915492957747" y="15.0">0.1 s ★</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 0.81 s</title>
+<path class="s1" d="M170,0 h6.845070422535212 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-6.845070422535212 z"/>
+<text class="val" x="186.8450704225352" y="15.0">0.11 s ★</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 0.81 s</title>
 <rect class="hit" x="0" y="27" width="520" height="28" />
 <text class="lbl" x="162" y="45.0" text-anchor="end">k3s in Lima</text>
 <path class="s2" d="M170,30 h75.85915492957747 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-75.85915492957747 z"/>
@@ -163,45 +163,45 @@ Every kvz Linux pod is its own cold-booted VM; no pools, snapshots or pre-starte
 <text class="lbl" x="162" y="105.0" text-anchor="end">kvz v1 (Apple daemon)</text>
 <path class="s4" d="M170,90 h276.0 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-276.0 z"/>
 <text class="val" x="456.0" y="105.0">2.84 s</text></g></svg></figure><figure class="panel"><figcaption><b>API creates / s</b><span>higher is better</span></figcaption>
-<svg viewBox="0 0 520 120" role="img" aria-label="API creates / s"><g class="bar" tabindex="0"><title>kvz (new): 9,442 ops/s</title>
+<svg viewBox="0 0 520 120" role="img" aria-label="API creates / s"><g class="bar" tabindex="0"><title>kvz (new): 9,614 ops/s</title>
 <rect class="hit" x="0" y="-3" width="520" height="28" />
 <text class="lbl" x="162" y="15.0" text-anchor="end">kvz (new)</text>
 <path class="s1" d="M170,0 h276.0 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-276.0 z"/>
-<text class="val" x="456.0" y="15.0">9,442 ops/s ★</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 3,200 ops/s</title>
+<text class="val" x="456.0" y="15.0">9,614 ops/s ★</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 3,200 ops/s</title>
 <rect class="hit" x="0" y="27" width="520" height="28" />
 <text class="lbl" x="162" y="45.0" text-anchor="end">k3s in Lima</text>
-<path class="s2" d="M170,30 h90.89012443738417 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-90.89012443738417 z"/>
-<text class="val" x="270.8901244373842" y="45.0">3,200 ops/s</text></g><g class="bar" tabindex="0"><title>Apple container cluster: 7,974 ops/s</title>
+<path class="s2" d="M170,30 h89.1974204285417 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-89.1974204285417 z"/>
+<text class="val" x="269.1974204285417" y="45.0">3,200 ops/s</text></g><g class="bar" tabindex="0"><title>Apple container cluster: 7,974 ops/s</title>
 <rect class="hit" x="0" y="57" width="520" height="28" />
 <text class="lbl" x="162" y="75.0" text-anchor="end">Apple container cluster</text>
-<path class="s3" d="M170,60 h232.45432883240667 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-232.45432883240667 z"/>
-<text class="val" x="412.45432883240665" y="75.0">7,974 ops/s</text></g><g class="bar" tabindex="0"><title>kvz v1 (Apple daemon): 3,272 ops/s</title>
+<path class="s3" d="M170,60 h228.23632203037238 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-228.23632203037238 z"/>
+<text class="val" x="408.2363220303724" y="75.0">7,974 ops/s</text></g><g class="bar" tabindex="0"><title>kvz v1 (Apple daemon): 3,272 ops/s</title>
 <rect class="hit" x="0" y="87" width="520" height="28" />
 <text class="lbl" x="162" y="105.0" text-anchor="end">kvz v1 (Apple daemon)</text>
-<path class="s4" d="M170,90 h93.03997881916865 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-93.03997881916865 z"/>
-<text class="val" x="273.03997881916865" y="105.0">3,272 ops/s</text></g></svg></figure><figure class="panel"><figcaption><b>API gets / s</b><span>higher is better</span></figcaption>
-<svg viewBox="0 0 520 120" role="img" aria-label="API gets / s"><g class="bar" tabindex="0"><title>kvz (new): 18,643 ops/s</title>
+<path class="s4" d="M170,90 h91.30892448512586 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-91.30892448512586 z"/>
+<text class="val" x="271.3089244851259" y="105.0">3,272 ops/s</text></g></svg></figure><figure class="panel"><figcaption><b>API gets / s</b><span>higher is better</span></figcaption>
+<svg viewBox="0 0 520 120" role="img" aria-label="API gets / s"><g class="bar" tabindex="0"><title>kvz (new): 18,950 ops/s</title>
 <rect class="hit" x="0" y="-3" width="520" height="28" />
 <text class="lbl" x="162" y="15.0" text-anchor="end">kvz (new)</text>
 <path class="s1" d="M170,0 h276.0 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-276.0 z"/>
-<text class="val" x="456.0" y="15.0">18,643 ops/s ★</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 9,939 ops/s</title>
+<text class="val" x="456.0" y="15.0">18,950 ops/s ★</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 9,939 ops/s</title>
 <rect class="hit" x="0" y="27" width="520" height="28" />
 <text class="lbl" x="162" y="45.0" text-anchor="end">k3s in Lima</text>
-<path class="s2" d="M170,30 h145.27425843480125 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-145.27425843480125 z"/>
-<text class="val" x="325.27425843480125" y="45.0">9,939 ops/s</text></g><g class="bar" tabindex="0"><title>Apple container cluster: 15,044 ops/s</title>
+<path class="s2" d="M170,30 h142.85981160452783 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-142.85981160452783 z"/>
+<text class="val" x="322.85981160452786" y="45.0">9,939 ops/s</text></g><g class="bar" tabindex="0"><title>Apple container cluster: 15,044 ops/s</title>
 <rect class="hit" x="0" y="57" width="520" height="28" />
 <text class="lbl" x="162" y="75.0" text-anchor="end">Apple container cluster</text>
-<path class="s3" d="M170,60 h221.95397736415813 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-221.95397736415813 z"/>
-<text class="val" x="401.95397736415816" y="75.0">15,044 ops/s</text></g><g class="bar" tabindex="0"><title>kvz v1 (Apple daemon): 14,420 ops/s</title>
+<path class="s3" d="M170,60 h218.2992691100029 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-218.2992691100029 z"/>
+<text class="val" x="398.2992691100029" y="75.0">15,044 ops/s</text></g><g class="bar" tabindex="0"><title>kvz v1 (Apple daemon): 14,420 ops/s</title>
 <rect class="hit" x="0" y="87" width="520" height="28" />
 <text class="lbl" x="162" y="105.0" text-anchor="end">kvz v1 (Apple daemon)</text>
-<path class="s4" d="M170,90 h212.5745856353591 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-212.5745856353591 z"/>
-<text class="val" x="392.5745856353591" y="105.0">14,420 ops/s</text></g></svg></figure><figure class="panel"><figcaption><b>Create → watch event p50</b><span>lower is better</span></figcaption>
-<svg viewBox="0 0 520 120" role="img" aria-label="Create → watch event p50"><g class="bar" tabindex="0"><title>kvz (new): 0.42 ms</title>
+<path class="s4" d="M170,90 h209.0715850022428 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-209.0715850022428 z"/>
+<text class="val" x="389.07158500224284" y="105.0">14,420 ops/s</text></g></svg></figure><figure class="panel"><figcaption><b>Create → watch event p50</b><span>lower is better</span></figcaption>
+<svg viewBox="0 0 520 120" role="img" aria-label="Create → watch event p50"><g class="bar" tabindex="0"><title>kvz (new): 0.4 ms</title>
 <rect class="hit" x="0" y="-3" width="520" height="28" />
 <text class="lbl" x="162" y="15.0" text-anchor="end">kvz (new)</text>
-<path class="s1" d="M170,0 h15.731543624161073 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-15.731543624161073 z"/>
-<text class="val" x="195.73154362416108" y="15.0">0.42 ms ★</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 0.84 ms</title>
+<path class="s1" d="M170,0 h14.791946308724832 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-14.791946308724832 z"/>
+<text class="val" x="194.79194630872485" y="15.0">0.4 ms ★</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 0.84 ms</title>
 <rect class="hit" x="0" y="27" width="520" height="28" />
 <text class="lbl" x="162" y="45.0" text-anchor="end">k3s in Lima</text>
 <path class="s2" d="M170,30 h35.46308724832215 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-35.46308724832215 z"/>
@@ -214,11 +214,11 @@ Every kvz Linux pod is its own cold-booted VM; no pools, snapshots or pre-starte
 <text class="lbl" x="162" y="105.0" text-anchor="end">kvz v1 (Apple daemon)</text>
 <path class="s4" d="M170,90 h276.0 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-276.0 z"/>
 <text class="val" x="456.0" y="105.0">5.96 ms</text></g></svg></figure><figure class="panel"><figcaption><b>API create p99</b><span>lower is better</span></figcaption>
-<svg viewBox="0 0 520 120" role="img" aria-label="API create p99"><g class="bar" tabindex="0"><title>kvz (new): 14.17 ms</title>
+<svg viewBox="0 0 520 120" role="img" aria-label="API create p99"><g class="bar" tabindex="0"><title>kvz (new): 13.14 ms</title>
 <rect class="hit" x="0" y="-3" width="520" height="28" />
 <text class="lbl" x="162" y="15.0" text-anchor="end">kvz (new)</text>
-<path class="s1" d="M170,0 h52.01581250882394 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-52.01581250882394 z"/>
-<text class="val" x="232.01581250882396" y="15.0">14.17 ms</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 70.83 ms</title>
+<path class="s1" d="M170,0 h47.9440914866582 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-47.9440914866582 z"/>
+<text class="val" x="227.9440914866582" y="15.0">13.14 ms</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 70.83 ms</title>
 <rect class="hit" x="0" y="27" width="520" height="28" />
 <text class="lbl" x="162" y="45.0" text-anchor="end">k3s in Lima</text>
 <path class="s2" d="M170,30 h276.0 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-276.0 z"/>
@@ -232,11 +232,11 @@ Every kvz Linux pod is its own cold-booted VM; no pools, snapshots or pre-starte
 <path class="s4" d="M170,90 h82.88973598757589 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-82.88973598757589 z"/>
 <text class="val" x="262.8897359875759" y="105.0">21.98 ms</text></g></svg></figure></div>
 <h2>Mac Studio (M5 Max)</h2><div class="grid"><figure class="panel"><figcaption><b>Restart → API ready</b><span>lower is better</span></figcaption>
-<svg viewBox="0 0 520 90" role="img" aria-label="Restart → API ready"><g class="bar" tabindex="0"><title>kvz (new): 1.42 s</title>
+<svg viewBox="0 0 520 90" role="img" aria-label="Restart → API ready"><g class="bar" tabindex="0"><title>kvz (new): 2.02 s</title>
 <rect class="hit" x="0" y="-3" width="520" height="28" />
 <text class="lbl" x="162" y="15.0" text-anchor="end">kvz (new)</text>
-<path class="s1" d="M170,0 h39.548740416210286 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-39.548740416210286 z"/>
-<text class="val" x="219.54874041621028" y="15.0">1.42 s ★</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 9.13 s</title>
+<path class="s1" d="M170,0 h57.949616648411826 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-57.949616648411826 z"/>
+<text class="val" x="237.94961664841182" y="15.0">2.02 s ★</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 9.13 s</title>
 <rect class="hit" x="0" y="27" width="520" height="28" />
 <text class="lbl" x="162" y="45.0" text-anchor="end">k3s in Lima</text>
 <path class="s2" d="M170,30 h276.0 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-276.0 z"/>
@@ -245,11 +245,11 @@ Every kvz Linux pod is its own cold-booted VM; no pools, snapshots or pre-starte
 <text class="lbl" x="162" y="75.0" text-anchor="end">kvz v1 (Apple daemon)</text>
 <path class="s4" d="M170,60 h61.01642935377875 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-61.01642935377875 z"/>
 <text class="val" x="241.01642935377873" y="75.0">2.12 s</text></g></svg></figure><figure class="panel"><figcaption><b>Idle memory (phys footprint)</b><span>lower is better</span></figcaption>
-<svg viewBox="0 0 520 120" role="img" aria-label="Idle memory (phys footprint)"><g class="bar" tabindex="0"><title>kvz (new): 277 MB</title>
+<svg viewBox="0 0 520 120" role="img" aria-label="Idle memory (phys footprint)"><g class="bar" tabindex="0"><title>kvz (new): 276 MB</title>
 <rect class="hit" x="0" y="-3" width="520" height="28" />
 <text class="lbl" x="162" y="15.0" text-anchor="end">kvz (new)</text>
-<path class="s1" d="M170,0 h23.851031706089582 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-23.851031706089582 z"/>
-<text class="val" x="203.85103170608957" y="15.0">277 MB ★</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 2,782 MB</title>
+<path class="s1" d="M170,0 h23.73024660291897 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-23.73024660291897 z"/>
+<text class="val" x="203.73024660291898" y="15.0">276 MB ★</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 2,782 MB</title>
 <rect class="hit" x="0" y="27" width="520" height="28" />
 <text class="lbl" x="162" y="45.0" text-anchor="end">k3s in Lima</text>
 <path class="s2" d="M170,30 h276.0 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-276.0 z"/>
@@ -262,11 +262,11 @@ Every kvz Linux pod is its own cold-booted VM; no pools, snapshots or pre-starte
 <text class="lbl" x="162" y="105.0" text-anchor="end">kvz v1 (Apple daemon)</text>
 <path class="s4" d="M170,90 h24.062405636638147 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-24.062405636638147 z"/>
 <text class="val" x="204.06240563663815" y="105.0">279 MB</text></g></svg></figure><figure class="panel"><figcaption><b>Idle CPU</b><span>lower is better</span></figcaption>
-<svg viewBox="0 0 520 120" role="img" aria-label="Idle CPU"><g class="bar" tabindex="0"><title>kvz (new): 1.1 % core</title>
+<svg viewBox="0 0 520 120" role="img" aria-label="Idle CPU"><g class="bar" tabindex="0"><title>kvz (new): 1.06 % core</title>
 <rect class="hit" x="0" y="-3" width="520" height="28" />
 <text class="lbl" x="162" y="15.0" text-anchor="end">kvz (new)</text>
-<path class="s1" d="M170,0 h17.644413211524945 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-17.644413211524945 z"/>
-<text class="val" x="197.64441321152495" y="15.0">1.1 % core</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 9.88 % core</title>
+<path class="s1" d="M170,0 h16.857343640196767 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-16.857343640196767 z"/>
+<text class="val" x="196.85734364019677" y="15.0">1.06 % core</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 9.88 % core</title>
 <rect class="hit" x="0" y="27" width="520" height="28" />
 <text class="lbl" x="162" y="45.0" text-anchor="end">k3s in Lima</text>
 <path class="s2" d="M170,30 h190.40618411806042 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-190.40618411806042 z"/>
@@ -279,11 +279,11 @@ Every kvz Linux pod is its own cold-booted VM; no pools, snapshots or pre-starte
 <text class="lbl" x="162" y="105.0" text-anchor="end">kvz v1 (Apple daemon)</text>
 <path class="s4" d="M170,90 h13.709065354884046 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-13.709065354884046 z"/>
 <text class="val" x="193.70906535488405" y="105.0">0.9 % core ★</text></g></svg></figure><figure class="panel"><figcaption><b>1 nginx pod → Ready</b><span>lower is better</span></figcaption>
-<svg viewBox="0 0 520 120" role="img" aria-label="1 nginx pod → Ready"><g class="bar" tabindex="0"><title>kvz (new): 104 ms</title>
+<svg viewBox="0 0 520 120" role="img" aria-label="1 nginx pod → Ready"><g class="bar" tabindex="0"><title>kvz (new): 94.16 ms</title>
 <rect class="hit" x="0" y="-3" width="520" height="28" />
 <text class="lbl" x="162" y="15.0" text-anchor="end">kvz (new)</text>
-<path class="s1" d="M170,0 h29.27726856095326 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-29.27726856095326 z"/>
-<text class="val" x="209.27726856095325" y="15.0">104 ms ★</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 403 ms</title>
+<path class="s1" d="M170,0 h26.207149404216317 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-26.207149404216317 z"/>
+<text class="val" x="206.20714940421632" y="15.0">94.16 ms ★</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 403 ms</title>
 <rect class="hit" x="0" y="27" width="520" height="28" />
 <text class="lbl" x="162" y="45.0" text-anchor="end">k3s in Lima</text>
 <path class="s2" d="M170,30 h125.17277726856096 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-125.17277726856096 z"/>
@@ -296,11 +296,11 @@ Every kvz Linux pod is its own cold-booted VM; no pools, snapshots or pre-starte
 <text class="lbl" x="162" y="105.0" text-anchor="end">kvz v1 (Apple daemon)</text>
 <path class="s4" d="M170,90 h180.43813015582032 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-180.43813015582032 z"/>
 <text class="val" x="360.4381301558203" y="105.0">575 ms</text></g></svg></figure><figure class="panel"><figcaption><b>20 nginx pods → all Ready</b><span>lower is better</span></figcaption>
-<svg viewBox="0 0 520 120" role="img" aria-label="20 nginx pods → all Ready"><g class="bar" tabindex="0"><title>kvz (new): 0.28 s</title>
+<svg viewBox="0 0 520 120" role="img" aria-label="20 nginx pods → all Ready"><g class="bar" tabindex="0"><title>kvz (new): 0.23 s</title>
 <rect class="hit" x="0" y="-3" width="520" height="28" />
 <text class="lbl" x="162" y="15.0" text-anchor="end">kvz (new)</text>
-<path class="s1" d="M170,0 h3.99184505606524 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-3.99184505606524 z"/>
-<text class="val" x="183.99184505606524" y="15.0">0.28 s ★</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 0.97 s</title>
+<path class="s1" d="M170,0 h2.5647298674821615 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-2.5647298674821615 z"/>
+<text class="val" x="182.56472986748216" y="15.0">0.23 s ★</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 0.97 s</title>
 <rect class="hit" x="0" y="27" width="520" height="28" />
 <text class="lbl" x="162" y="45.0" text-anchor="end">k3s in Lima</text>
 <path class="s2" d="M170,30 h23.68603465851172 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-23.68603465851172 z"/>
@@ -313,11 +313,11 @@ Every kvz Linux pod is its own cold-booted VM; no pools, snapshots or pre-starte
 <text class="lbl" x="162" y="105.0" text-anchor="end">kvz v1 (Apple daemon)</text>
 <path class="s4" d="M170,90 h276.0 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-276.0 z"/>
 <text class="val" x="456.0" y="105.0">9.81 s</text></g></svg></figure><figure class="panel"><figcaption><b>50 nginx pods → all Ready</b><span>lower is better</span></figcaption>
-<svg viewBox="0 0 520 120" role="img" aria-label="50 nginx pods → all Ready"><g class="bar" tabindex="0"><title>kvz (new): 0.6 s</title>
+<svg viewBox="0 0 520 120" role="img" aria-label="50 nginx pods → all Ready"><g class="bar" tabindex="0"><title>kvz (new): 0.62 s</title>
 <rect class="hit" x="0" y="-3" width="520" height="28" />
 <text class="lbl" x="162" y="15.0" text-anchor="end">kvz (new)</text>
-<path class="s1" d="M170,0 h2.526806526806527 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-2.526806526806527 z"/>
-<text class="val" x="182.52680652680652" y="15.0">0.6 s ★</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 4.46 s</title>
+<path class="s1" d="M170,0 h2.7443667443667445 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-2.7443667443667445 z"/>
+<text class="val" x="182.74436674436674" y="15.0">0.62 s ★</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 4.46 s</title>
 <rect class="hit" x="0" y="27" width="520" height="28" />
 <text class="lbl" x="162" y="45.0" text-anchor="end">k3s in Lima</text>
 <path class="s2" d="M170,30 h44.515928515928515 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-44.515928515928515 z"/>
@@ -330,11 +330,11 @@ Every kvz Linux pod is its own cold-booted VM; no pools, snapshots or pre-starte
 <text class="lbl" x="162" y="105.0" text-anchor="end">kvz v1 (Apple daemon)</text>
 <path class="s4" d="M170,90 h276.0 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-276.0 z"/>
 <text class="val" x="456.0" y="105.0">25.74 s</text></g></svg></figure><figure class="panel"><figcaption><b>Host memory with 20 pods running</b><span>lower is better</span></figcaption>
-<svg viewBox="0 0 520 120" role="img" aria-label="Host memory with 20 pods running"><g class="bar" tabindex="0"><title>kvz (new): 1,598 MB</title>
+<svg viewBox="0 0 520 120" role="img" aria-label="Host memory with 20 pods running"><g class="bar" tabindex="0"><title>kvz (new): 1,578 MB</title>
 <rect class="hit" x="0" y="-3" width="520" height="28" />
 <text class="lbl" x="162" y="15.0" text-anchor="end">kvz (new)</text>
-<path class="s1" d="M170,0 h60.298769973560184 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-60.298769973560184 z"/>
-<text class="val" x="240.29876997356018" y="15.0">1,598 MB ★</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 3,571 MB</title>
+<path class="s1" d="M170,0 h59.48200942637085 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-59.48200942637085 z"/>
+<text class="val" x="239.48200942637084" y="15.0">1,578 MB ★</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 3,571 MB</title>
 <rect class="hit" x="0" y="27" width="520" height="28" />
 <text class="lbl" x="162" y="45.0" text-anchor="end">k3s in Lima</text>
 <path class="s2" d="M170,30 h139.66938728589494 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-139.66938728589494 z"/>
@@ -364,45 +364,45 @@ Every kvz Linux pod is its own cold-booted VM; no pools, snapshots or pre-starte
 <text class="lbl" x="162" y="105.0" text-anchor="end">kvz v1 (Apple daemon)</text>
 <path class="s4" d="M170,90 h276.0 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-276.0 z"/>
 <text class="val" x="456.0" y="105.0">4.38 s</text></g></svg></figure><figure class="panel"><figcaption><b>API creates / s</b><span>higher is better</span></figcaption>
-<svg viewBox="0 0 520 120" role="img" aria-label="API creates / s"><g class="bar" tabindex="0"><title>kvz (new): 15,725 ops/s</title>
+<svg viewBox="0 0 520 120" role="img" aria-label="API creates / s"><g class="bar" tabindex="0"><title>kvz (new): 14,530 ops/s</title>
 <rect class="hit" x="0" y="-3" width="520" height="28" />
 <text class="lbl" x="162" y="15.0" text-anchor="end">kvz (new)</text>
 <path class="s1" d="M170,0 h276.0 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-276.0 z"/>
-<text class="val" x="456.0" y="15.0">15,725 ops/s ★</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 4,500 ops/s</title>
+<text class="val" x="456.0" y="15.0">14,530 ops/s ★</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 4,500 ops/s</title>
 <rect class="hit" x="0" y="27" width="520" height="28" />
 <text class="lbl" x="162" y="45.0" text-anchor="end">k3s in Lima</text>
-<path class="s2" d="M170,30 h76.13608903020668 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-76.13608903020668 z"/>
-<text class="val" x="256.1360890302067" y="45.0">4,500 ops/s</text></g><g class="bar" tabindex="0"><title>Apple container cluster: 8,826 ops/s</title>
+<path class="s2" d="M170,30 h82.72378789442897 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-82.72378789442897 z"/>
+<text class="val" x="262.72378789442894" y="45.0">4,500 ops/s</text></g><g class="bar" tabindex="0"><title>Apple container cluster: 8,826 ops/s</title>
 <rect class="hit" x="0" y="57" width="520" height="28" />
 <text class="lbl" x="162" y="75.0" text-anchor="end">Apple container cluster</text>
-<path class="s3" d="M170,60 h153.15612082670907 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-153.15612082670907 z"/>
-<text class="val" x="333.15612082670907" y="75.0">8,826 ops/s</text></g><g class="bar" tabindex="0"><title>kvz v1 (Apple daemon): 4,526 ops/s</title>
+<path class="s3" d="M170,60 h166.0753587281924 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-166.0753587281924 z"/>
+<text class="val" x="346.07535872819244" y="75.0">8,826 ops/s</text></g><g class="bar" tabindex="0"><title>kvz v1 (Apple daemon): 4,526 ops/s</title>
 <rect class="hit" x="0" y="87" width="520" height="28" />
 <text class="lbl" x="162" y="105.0" text-anchor="end">kvz v1 (Apple daemon)</text>
-<path class="s4" d="M170,90 h76.59904610492846 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-76.59904610492846 z"/>
-<text class="val" x="256.59904610492845" y="105.0">4,526 ops/s</text></g></svg></figure><figure class="panel"><figcaption><b>API gets / s</b><span>higher is better</span></figcaption>
-<svg viewBox="0 0 520 120" role="img" aria-label="API gets / s"><g class="bar" tabindex="0"><title>kvz (new): 24,709 ops/s</title>
+<path class="s4" d="M170,90 h83.22480300058497 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-83.22480300058497 z"/>
+<text class="val" x="263.224803000585" y="105.0">4,526 ops/s</text></g></svg></figure><figure class="panel"><figcaption><b>API gets / s</b><span>higher is better</span></figcaption>
+<svg viewBox="0 0 520 120" role="img" aria-label="API gets / s"><g class="bar" tabindex="0"><title>kvz (new): 24,490 ops/s</title>
 <rect class="hit" x="0" y="-3" width="520" height="28" />
 <text class="lbl" x="162" y="15.0" text-anchor="end">kvz (new)</text>
 <path class="s1" d="M170,0 h276.0 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-276.0 z"/>
-<text class="val" x="456.0" y="15.0">24,709 ops/s ★</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 15,558 ops/s</title>
+<text class="val" x="456.0" y="15.0">24,490 ops/s ★</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 15,558 ops/s</title>
 <rect class="hit" x="0" y="27" width="520" height="28" />
 <text class="lbl" x="162" y="45.0" text-anchor="end">k3s in Lima</text>
-<path class="s2" d="M170,30 h172.30175239791168 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-172.30175239791168 z"/>
-<text class="val" x="352.3017523979117" y="45.0">15,558 ops/s</text></g><g class="bar" tabindex="0"><title>Apple container cluster: 14,988 ops/s</title>
+<path class="s2" d="M170,30 h173.88194940688868 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-173.88194940688868 z"/>
+<text class="val" x="353.8819494068887" y="45.0">15,558 ops/s</text></g><g class="bar" tabindex="0"><title>Apple container cluster: 14,988 ops/s</title>
 <rect class="hit" x="0" y="57" width="520" height="28" />
 <text class="lbl" x="162" y="75.0" text-anchor="end">Apple container cluster</text>
-<path class="s3" d="M170,60 h165.83690153385407 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-165.83690153385407 z"/>
-<text class="val" x="345.8369015338541" y="75.0">14,988 ops/s</text></g><g class="bar" tabindex="0"><title>kvz v1 (Apple daemon): 9,371 ops/s</title>
+<path class="s3" d="M170,60 h167.35915392310991 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-167.35915392310991 z"/>
+<text class="val" x="347.35915392310994" y="75.0">14,988 ops/s</text></g><g class="bar" tabindex="0"><title>kvz v1 (Apple daemon): 9,371 ops/s</title>
 <rect class="hit" x="0" y="87" width="520" height="28" />
 <text class="lbl" x="162" y="105.0" text-anchor="end">kvz v1 (Apple daemon)</text>
-<path class="s4" d="M170,90 h102.19126634019993 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-102.19126634019993 z"/>
-<text class="val" x="282.19126634019995" y="105.0">9,371 ops/s</text></g></svg></figure><figure class="panel"><figcaption><b>Create → watch event p50</b><span>lower is better</span></figcaption>
-<svg viewBox="0 0 520 120" role="img" aria-label="Create → watch event p50"><g class="bar" tabindex="0"><title>kvz (new): 0.42 ms</title>
+<path class="s4" d="M170,90 h103.14306131199085 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-103.14306131199085 z"/>
+<text class="val" x="283.14306131199083" y="105.0">9,371 ops/s</text></g></svg></figure><figure class="panel"><figcaption><b>Create → watch event p50</b><span>lower is better</span></figcaption>
+<svg viewBox="0 0 520 120" role="img" aria-label="Create → watch event p50"><g class="bar" tabindex="0"><title>kvz (new): 0.4 ms</title>
 <rect class="hit" x="0" y="-3" width="520" height="28" />
 <text class="lbl" x="162" y="15.0" text-anchor="end">kvz (new)</text>
-<path class="s1" d="M170,0 h25.4 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-25.4 z"/>
-<text class="val" x="205.4" y="15.0">0.42 ms ★</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 0.82 ms</title>
+<path class="s1" d="M170,0 h24.0 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-24.0 z"/>
+<text class="val" x="204.0" y="15.0">0.4 ms ★</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 0.82 ms</title>
 <rect class="hit" x="0" y="27" width="520" height="28" />
 <text class="lbl" x="162" y="45.0" text-anchor="end">k3s in Lima</text>
 <path class="s2" d="M170,30 h53.4 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-53.4 z"/>
@@ -415,11 +415,11 @@ Every kvz Linux pod is its own cold-booted VM; no pools, snapshots or pre-starte
 <text class="lbl" x="162" y="105.0" text-anchor="end">kvz v1 (Apple daemon)</text>
 <path class="s4" d="M170,90 h276.0 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-276.0 z"/>
 <text class="val" x="456.0" y="105.0">4 ms</text></g></svg></figure><figure class="panel"><figcaption><b>API create p99</b><span>lower is better</span></figcaption>
-<svg viewBox="0 0 520 120" role="img" aria-label="API create p99"><g class="bar" tabindex="0"><title>kvz (new): 7.71 ms</title>
+<svg viewBox="0 0 520 120" role="img" aria-label="API create p99"><g class="bar" tabindex="0"><title>kvz (new): 9.51 ms</title>
 <rect class="hit" x="0" y="-3" width="520" height="28" />
 <text class="lbl" x="162" y="15.0" text-anchor="end">kvz (new)</text>
-<path class="s1" d="M170,0 h27.566018423746165 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-27.566018423746165 z"/>
-<text class="val" x="207.56601842374616" y="15.0">7.71 ms ★</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 68.39 ms</title>
+<path class="s1" d="M170,0 h34.93551688843398 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-34.93551688843398 z"/>
+<text class="val" x="214.935516888434" y="15.0">9.51 ms ★</text></g><g class="bar" tabindex="0"><title>k3s in Lima: 68.39 ms</title>
 <rect class="hit" x="0" y="27" width="520" height="28" />
 <text class="lbl" x="162" y="45.0" text-anchor="end">k3s in Lima</text>
 <path class="s2" d="M170,30 h276.0 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-276.0 z"/>
@@ -432,5 +432,5 @@ Every kvz Linux pod is its own cold-booted VM; no pools, snapshots or pre-starte
 <text class="lbl" x="162" y="105.0" text-anchor="end">kvz v1 (Apple daemon)</text>
 <path class="s4" d="M170,90 h67.36131013306039 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 h-67.36131013306039 z"/>
 <text class="val" x="247.36131013306039" y="105.0">17.43 ms</text></g></svg></figure></div>
-<details><summary>Table view (all hosts)</summary><table><tr><th>metric</th><th>platform</th><th>amelias-mini</th><th>dereks-mac-mini</th><th>lexies-mac-mini</th><th>studio</th></tr><tr><td>Restart → API ready (s)</td><td>kvz (new)</td><td>2.22</td><td>3.97</td><td>1.75</td><td>1.42</td></tr><tr><td>Restart → API ready (s)</td><td>k3s in Lima</td><td>9.24</td><td>9.36</td><td>9.31</td><td>9.13</td></tr><tr><td>Restart → API ready (s)</td><td>kvz v1 (Apple daemon)</td><td>2.13</td><td>1.82</td><td>2.11</td><td>2.12</td></tr><tr><td>Idle memory (phys footprint) (MB)</td><td>kvz (new)</td><td>252</td><td>248</td><td>267</td><td>277</td></tr><tr><td>Idle memory (phys footprint) (MB)</td><td>k3s in Lima</td><td>3,194</td><td>3,192</td><td>3,169</td><td>2,782</td></tr><tr><td>Idle memory (phys footprint) (MB)</td><td>Apple container cluster</td><td>2,446</td><td>2,453</td><td>2,473</td><td>2,598</td></tr><tr><td>Idle memory (phys footprint) (MB)</td><td>kvz v1 (Apple daemon)</td><td>240</td><td>366</td><td>250</td><td>279</td></tr><tr><td>Idle CPU (% core)</td><td>kvz (new)</td><td>1.66</td><td>1.9</td><td>1.63</td><td>1.1</td></tr><tr><td>Idle CPU (% core)</td><td>k3s in Lima</td><td>20.83</td><td>20.08</td><td>20.04</td><td>9.88</td></tr><tr><td>Idle CPU (% core)</td><td>Apple container cluster</td><td>27.54</td><td>26.1</td><td>25.66</td><td>14.23</td></tr><tr><td>Idle CPU (% core)</td><td>kvz v1 (Apple daemon)</td><td>1.63</td><td>1.5</td><td>1.66</td><td>0.9</td></tr><tr><td>1 nginx pod → Ready (ms)</td><td>kvz (new)</td><td>103</td><td>213</td><td>103</td><td>104</td></tr><tr><td>1 nginx pod → Ready (ms)</td><td>k3s in Lima</td><td>421</td><td>421</td><td>400</td><td>403</td></tr><tr><td>1 nginx pod → Ready (ms)</td><td>Apple container cluster</td><td>859</td><td>857</td><td>860</td><td>873</td></tr><tr><td>1 nginx pod → Ready (ms)</td><td>kvz v1 (Apple daemon)</td><td>756</td><td>741</td><td>765</td><td>575</td></tr><tr><td>20 nginx pods → all Ready (s)</td><td>kvz (new)</td><td>0.41</td><td>3.33</td><td>0.42</td><td>0.28</td></tr><tr><td>20 nginx pods → all Ready (s)</td><td>k3s in Lima</td><td>1.31</td><td>1.3</td><td>1.1</td><td>0.97</td></tr><tr><td>20 nginx pods → all Ready (s)</td><td>Apple container cluster</td><td>0.88</td><td>0.88</td><td>0.89</td><td>0.93</td></tr><tr><td>20 nginx pods → all Ready (s)</td><td>kvz v1 (Apple daemon)</td><td>12.96</td><td>12.23</td><td>11.73</td><td>9.81</td></tr><tr><td>50 nginx pods → all Ready (s)</td><td>kvz (new)</td><td>1.3</td><td>4.25</td><td>0.91</td><td>0.6</td></tr><tr><td>50 nginx pods → all Ready (s)</td><td>k3s in Lima</td><td>4.8</td><td>4.48</td><td>4.47</td><td>4.46</td></tr><tr><td>50 nginx pods → all Ready (s)</td><td>Apple container cluster</td><td>4.19</td><td>4.28</td><td>4.2</td><td>4.32</td></tr><tr><td>50 nginx pods → all Ready (s)</td><td>kvz v1 (Apple daemon)</td><td>35.18</td><td>30.86</td><td>30.18</td><td>25.74</td></tr><tr><td>Host memory with 20 pods running (MB)</td><td>kvz (new)</td><td>1,585</td><td>1,338</td><td>1,611</td><td>1,598</td></tr><tr><td>Host memory with 20 pods running (MB)</td><td>k3s in Lima</td><td>3,724</td><td>3,782</td><td>3,773</td><td>3,571</td></tr><tr><td>Host memory with 20 pods running (MB)</td><td>Apple container cluster</td><td>3,009</td><td>3,017</td><td>2,976</td><td>3,196</td></tr><tr><td>Host memory with 20 pods running (MB)</td><td>kvz v1 (Apple daemon)</td><td>6,251</td><td>6,987</td><td>6,882</td><td>6,959</td></tr><tr><td>Delete 20 pods → gone (s)</td><td>kvz (new)</td><td>0.1</td><td>1.29</td><td>0.1</td><td>0.06</td></tr><tr><td>Delete 20 pods → gone (s)</td><td>k3s in Lima</td><td>0.81</td><td>0.81</td><td>1.03</td><td>1.07</td></tr><tr><td>Delete 20 pods → gone (s)</td><td>Apple container cluster</td><td>1.18</td><td>1.19</td><td>1.18</td><td>1.13</td></tr><tr><td>Delete 20 pods → gone (s)</td><td>kvz v1 (Apple daemon)</td><td>3.07</td><td>2.82</td><td>2.84</td><td>4.38</td></tr><tr><td>API creates / s (ops/s)</td><td>kvz (new)</td><td>9,442</td><td>6,012</td><td>11,402</td><td>15,725</td></tr><tr><td>API creates / s (ops/s)</td><td>k3s in Lima</td><td>3,200</td><td>2,915</td><td>3,989</td><td>4,500</td></tr><tr><td>API creates / s (ops/s)</td><td>Apple container cluster</td><td>7,974</td><td>8,007</td><td>7,732</td><td>8,826</td></tr><tr><td>API creates / s (ops/s)</td><td>kvz v1 (Apple daemon)</td><td>3,196</td><td>3,272</td><td>4,022</td><td>4,526</td></tr><tr><td>API gets / s (ops/s)</td><td>kvz (new)</td><td>18,643</td><td>18,205</td><td>23,339</td><td>24,709</td></tr><tr><td>API gets / s (ops/s)</td><td>k3s in Lima</td><td>9,854</td><td>9,939</td><td>12,954</td><td>15,558</td></tr><tr><td>API gets / s (ops/s)</td><td>Apple container cluster</td><td>14,848</td><td>15,238</td><td>15,044</td><td>14,988</td></tr><tr><td>API gets / s (ops/s)</td><td>kvz v1 (Apple daemon)</td><td>13,187</td><td>14,420</td><td>16,300</td><td>9,371</td></tr><tr><td>Create → watch event p50 (ms)</td><td>kvz (new)</td><td>0.42</td><td>0.43</td><td>0.41</td><td>0.42</td></tr><tr><td>Create → watch event p50 (ms)</td><td>k3s in Lima</td><td>0.84</td><td>0.92</td><td>0.79</td><td>0.82</td></tr><tr><td>Create → watch event p50 (ms)</td><td>Apple container cluster</td><td>0.53</td><td>0.52</td><td>0.52</td><td>0.65</td></tr><tr><td>Create → watch event p50 (ms)</td><td>kvz v1 (Apple daemon)</td><td>6.4</td><td>5.96</td><td>5.48</td><td>4</td></tr><tr><td>API create p99 (ms)</td><td>kvz (new)</td><td>14.17</td><td>157</td><td>12.52</td><td>7.71</td></tr><tr><td>API create p99 (ms)</td><td>k3s in Lima</td><td>70.83</td><td>85.31</td><td>69.61</td><td>68.39</td></tr><tr><td>API create p99 (ms)</td><td>Apple container cluster</td><td>14.03</td><td>12.24</td><td>12.84</td><td>9.95</td></tr><tr><td>API create p99 (ms)</td><td>kvz v1 (Apple daemon)</td><td>26.19</td><td>21.98</td><td>21.19</td><td>17.43</td></tr></table></details>
+<details><summary>Table view (all hosts)</summary><table><tr><th>metric</th><th>platform</th><th>amelias-mini</th><th>dereks-mac-mini</th><th>lexies-mac-mini</th><th>studio</th></tr><tr><td>Restart → API ready (s)</td><td>kvz (new)</td><td>1.73</td><td>5.67</td><td>1.63</td><td>2.02</td></tr><tr><td>Restart → API ready (s)</td><td>k3s in Lima</td><td>9.24</td><td>9.36</td><td>9.31</td><td>9.13</td></tr><tr><td>Restart → API ready (s)</td><td>kvz v1 (Apple daemon)</td><td>2.13</td><td>1.82</td><td>2.11</td><td>2.12</td></tr><tr><td>Idle memory (phys footprint) (MB)</td><td>kvz (new)</td><td>247</td><td>257</td><td>268</td><td>276</td></tr><tr><td>Idle memory (phys footprint) (MB)</td><td>k3s in Lima</td><td>3,194</td><td>3,192</td><td>3,169</td><td>2,782</td></tr><tr><td>Idle memory (phys footprint) (MB)</td><td>Apple container cluster</td><td>2,446</td><td>2,453</td><td>2,473</td><td>2,598</td></tr><tr><td>Idle memory (phys footprint) (MB)</td><td>kvz v1 (Apple daemon)</td><td>240</td><td>366</td><td>250</td><td>279</td></tr><tr><td>Idle CPU (% core)</td><td>kvz (new)</td><td>1.6</td><td>1.86</td><td>1.6</td><td>1.06</td></tr><tr><td>Idle CPU (% core)</td><td>k3s in Lima</td><td>20.83</td><td>20.08</td><td>20.04</td><td>9.88</td></tr><tr><td>Idle CPU (% core)</td><td>Apple container cluster</td><td>27.54</td><td>26.1</td><td>25.66</td><td>14.23</td></tr><tr><td>Idle CPU (% core)</td><td>kvz v1 (Apple daemon)</td><td>1.63</td><td>1.5</td><td>1.66</td><td>0.9</td></tr><tr><td>1 nginx pod → Ready (ms)</td><td>kvz (new)</td><td>98.85</td><td>116</td><td>95.41</td><td>94.16</td></tr><tr><td>1 nginx pod → Ready (ms)</td><td>k3s in Lima</td><td>421</td><td>421</td><td>400</td><td>403</td></tr><tr><td>1 nginx pod → Ready (ms)</td><td>Apple container cluster</td><td>859</td><td>857</td><td>860</td><td>873</td></tr><tr><td>1 nginx pod → Ready (ms)</td><td>kvz v1 (Apple daemon)</td><td>756</td><td>741</td><td>765</td><td>575</td></tr><tr><td>20 nginx pods → all Ready (s)</td><td>kvz (new)</td><td>0.44</td><td>5.1</td><td>0.39</td><td>0.23</td></tr><tr><td>20 nginx pods → all Ready (s)</td><td>k3s in Lima</td><td>1.31</td><td>1.3</td><td>1.1</td><td>0.97</td></tr><tr><td>20 nginx pods → all Ready (s)</td><td>Apple container cluster</td><td>0.88</td><td>0.88</td><td>0.89</td><td>0.93</td></tr><tr><td>20 nginx pods → all Ready (s)</td><td>kvz v1 (Apple daemon)</td><td>12.96</td><td>12.23</td><td>11.73</td><td>9.81</td></tr><tr><td>50 nginx pods → all Ready (s)</td><td>kvz (new)</td><td>1.51</td><td>6.61</td><td>1.05</td><td>0.62</td></tr><tr><td>50 nginx pods → all Ready (s)</td><td>k3s in Lima</td><td>4.8</td><td>4.48</td><td>4.47</td><td>4.46</td></tr><tr><td>50 nginx pods → all Ready (s)</td><td>Apple container cluster</td><td>4.19</td><td>4.28</td><td>4.2</td><td>4.32</td></tr><tr><td>50 nginx pods → all Ready (s)</td><td>kvz v1 (Apple daemon)</td><td>35.18</td><td>30.86</td><td>30.18</td><td>25.74</td></tr><tr><td>Host memory with 20 pods running (MB)</td><td>kvz (new)</td><td>1,558</td><td>1,402</td><td>1,568</td><td>1,578</td></tr><tr><td>Host memory with 20 pods running (MB)</td><td>k3s in Lima</td><td>3,724</td><td>3,782</td><td>3,773</td><td>3,571</td></tr><tr><td>Host memory with 20 pods running (MB)</td><td>Apple container cluster</td><td>3,009</td><td>3,017</td><td>2,976</td><td>3,196</td></tr><tr><td>Host memory with 20 pods running (MB)</td><td>kvz v1 (Apple daemon)</td><td>6,251</td><td>6,987</td><td>6,882</td><td>6,959</td></tr><tr><td>Delete 20 pods → gone (s)</td><td>kvz (new)</td><td>0.11</td><td>1.43</td><td>0.08</td><td>0.06</td></tr><tr><td>Delete 20 pods → gone (s)</td><td>k3s in Lima</td><td>0.81</td><td>0.81</td><td>1.03</td><td>1.07</td></tr><tr><td>Delete 20 pods → gone (s)</td><td>Apple container cluster</td><td>1.18</td><td>1.19</td><td>1.18</td><td>1.13</td></tr><tr><td>Delete 20 pods → gone (s)</td><td>kvz v1 (Apple daemon)</td><td>3.07</td><td>2.82</td><td>2.84</td><td>4.38</td></tr><tr><td>API creates / s (ops/s)</td><td>kvz (new)</td><td>9,614</td><td>4,907</td><td>11,162</td><td>14,530</td></tr><tr><td>API creates / s (ops/s)</td><td>k3s in Lima</td><td>3,200</td><td>2,915</td><td>3,989</td><td>4,500</td></tr><tr><td>API creates / s (ops/s)</td><td>Apple container cluster</td><td>7,974</td><td>8,007</td><td>7,732</td><td>8,826</td></tr><tr><td>API creates / s (ops/s)</td><td>kvz v1 (Apple daemon)</td><td>3,196</td><td>3,272</td><td>4,022</td><td>4,526</td></tr><tr><td>API gets / s (ops/s)</td><td>kvz (new)</td><td>18,950</td><td>18,210</td><td>21,505</td><td>24,490</td></tr><tr><td>API gets / s (ops/s)</td><td>k3s in Lima</td><td>9,854</td><td>9,939</td><td>12,954</td><td>15,558</td></tr><tr><td>API gets / s (ops/s)</td><td>Apple container cluster</td><td>14,848</td><td>15,238</td><td>15,044</td><td>14,988</td></tr><tr><td>API gets / s (ops/s)</td><td>kvz v1 (Apple daemon)</td><td>13,187</td><td>14,420</td><td>16,300</td><td>9,371</td></tr><tr><td>Create → watch event p50 (ms)</td><td>kvz (new)</td><td>0.4</td><td>0.41</td><td>0.4</td><td>0.4</td></tr><tr><td>Create → watch event p50 (ms)</td><td>k3s in Lima</td><td>0.84</td><td>0.92</td><td>0.79</td><td>0.82</td></tr><tr><td>Create → watch event p50 (ms)</td><td>Apple container cluster</td><td>0.53</td><td>0.52</td><td>0.52</td><td>0.65</td></tr><tr><td>Create → watch event p50 (ms)</td><td>kvz v1 (Apple daemon)</td><td>6.4</td><td>5.96</td><td>5.48</td><td>4</td></tr><tr><td>API create p99 (ms)</td><td>kvz (new)</td><td>12.26</td><td>367</td><td>13.14</td><td>9.51</td></tr><tr><td>API create p99 (ms)</td><td>k3s in Lima</td><td>70.83</td><td>85.31</td><td>69.61</td><td>68.39</td></tr><tr><td>API create p99 (ms)</td><td>Apple container cluster</td><td>14.03</td><td>12.24</td><td>12.84</td><td>9.95</td></tr><tr><td>API create p99 (ms)</td><td>kvz v1 (Apple daemon)</td><td>26.19</td><td>21.98</td><td>21.19</td><td>17.43</td></tr></table></details>
 </div></body></html>

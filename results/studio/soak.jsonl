@@ -1,0 +1,1 @@
+{"suite":"soak","host":"studio","platform":"kvz","rounds":20,"pods_per_round":50,"failed_rounds":0,"wall_s":[0.613,0.566,0.642,0.552,0.711,0.624,0.605,0.565,0.553,0.605,0.656,0.61,0.613,0.576,0.596,0.657,0.627,0.58,0.634,0.604],"fds_before":195,"fds_after":196,"vz_after":0,"rss_mb_before":301,"rss_mb_after":736}

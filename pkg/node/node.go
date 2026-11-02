@@ -405,6 +405,7 @@ func Run(ctx context.Context, o Options) error {
 	}
 	egress.Register(pn)
 	go storage.GCOrphans(ctx, cs)
+	go p.enforceDeadlines(ctx)
 	if enabled["linux"] {
 		mb, err := microvmrt.New(o.DataDir, o.NodeIP, t, vols, pn)
 		if err != nil {
@@ -480,6 +481,9 @@ func Run(ctx context.Context, o Options) error {
 	}
 	tlsCfg := &tls.Config{MinVersion: tls.VersionTLS12, Certificates: []tls.Certificate{cert}, ClientCAs: pool, ClientAuth: tls.RequireAndVerifyClientCert}
 	mux := http.NewServeMux()
+	mux.Handle("/metrics", p.metricsHandler())
+	mux.Handle("/metrics/cadvisor", p.cadvisorHandler())
+	mux.Handle("/metrics/resource", p.resourceHandler())
 	mux.Handle("/", api.PodHandler(api.PodHandlerConfig{
 		RunInContainer: p.RunInContainer, AttachToContainer: p.AttachToContainer, GetContainerLogs: p.GetContainerLogs,
 		GetPods: p.GetPods, GetStatsSummary: p.GetStatsSummary, GetMetricsResource: p.GetMetricsResource, PortForward: p.PortForward,
@@ -508,4 +512,59 @@ func Run(ctx context.Context, o Options) error {
 	klog.InfoS("starting kvz node", "name", o.Name, "ip", o.NodeIP, "backends", o.Backends)
 	return runVK(ctx, vkConfig{name: o.Name, client: cs, spec: spec, provider: p, listenAddr: fmt.Sprintf(":%d", o.ListenPort),
 		tlsConfig: tlsCfg, handler: mux, workers: o.Workers}, pc, podInf, scmInf)
+}
+
+// enforceDeadlines implements spec.activeDeadlineSeconds: pods active longer
+// than their deadline are stopped and fail with reason DeadlineExceeded.
+func (p *Provider) enforceDeadlines(ctx context.Context) {
+	done := map[string]bool{}
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(250 * time.Millisecond):
+		}
+		live := map[string]bool{}
+		for _, pod := range p.t.List() {
+			key := string(pod.UID)
+			live[key] = true
+			if done[key] || pod.Spec.ActiveDeadlineSeconds == nil || pod.Status.StartTime == nil ||
+				pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed || pod.DeletionTimestamp != nil {
+				continue
+			}
+			if time.Since(pod.Status.StartTime.Time) < time.Duration(*pod.Spec.ActiveDeadlineSeconds)*time.Second {
+				continue
+			}
+			done[key] = true
+			b, err := p.backendFor(pod)
+			if err != nil {
+				continue
+			}
+			go func(pod *corev1.Pod) {
+				p.t.Event(pod.Namespace, pod.Name, corev1.EventTypeWarning, "DeadlineExceeded", "Pod was active on the node longer than the specified deadline")
+				// set the reason first: virtual-kubelet stops reporting once the
+				// pod is terminal, which the container exits below make it
+				p.t.Update(pod.Namespace, pod.Name, func(s *corev1.PodStatus) {
+					s.Reason = "DeadlineExceeded"
+					s.Message = "Pod was active on the node longer than the specified deadline"
+				})
+				_ = b.Stop(ctx, pod)
+				p.t.Update(pod.Namespace, pod.Name, func(s *corev1.PodStatus) {
+					for _, cs := range s.ContainerStatuses {
+						if cs.State.Terminated == nil {
+							rt.SetTerminated(s, cs.Name, 137, "Error")
+						}
+					}
+					s.Phase = corev1.PodFailed
+					s.Reason = "DeadlineExceeded"
+					s.Message = "Pod was active on the node longer than the specified deadline"
+				})
+			}(pod)
+		}
+		for k := range done {
+			if !live[k] {
+				delete(done, k)
+			}
+		}
+	}
 }

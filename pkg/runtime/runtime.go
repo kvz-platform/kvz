@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 	"sync"
 	"time"
 
@@ -91,15 +92,37 @@ func (t *Tracker) List() []*corev1.Pod {
 // provider-owned status.
 func (t *Tracker) UpdateMeta(pod *corev1.Pod) {
 	t.mu.Lock()
-	defer t.mu.Unlock()
 	p, ok := t.pods[Key(pod.Namespace, pod.Name)]
 	if !ok {
+		t.mu.Unlock()
 		return
 	}
 	st := p.Status
 	np := pod.DeepCopy()
 	np.Status = st
 	t.pods[Key(pod.Namespace, pod.Name)] = np
+	var cp *corev1.Pod
+	if np.Generation != p.Generation {
+		observe(np)
+		cp = np.DeepCopy()
+	}
+	n := t.notify
+	t.mu.Unlock()
+	// Report the new observedGeneration synchronously: an asynchronous
+	// notification could land after a later status change (e.g. a resize
+	// applied right after this) and overwrite it with this older copy.
+	if cp != nil && n != nil {
+		n(cp)
+	}
+}
+
+// observe stamps the generation the status reflects (kubelet behavior since
+// PodObservedGenerationTracking).
+func observe(p *corev1.Pod) {
+	p.Status.ObservedGeneration = p.Generation
+	for i := range p.Status.Conditions {
+		p.Status.Conditions[i].ObservedGeneration = p.Generation
+	}
 }
 
 // Update mutates the stored pod's status and notifies virtual-kubelet.
@@ -111,6 +134,7 @@ func (t *Tracker) Update(ns, name string, f func(*corev1.PodStatus)) {
 		return
 	}
 	f(&p.Status)
+	observe(p)
 	cp := p.DeepCopy()
 	n := t.notify
 	t.mu.Unlock()
@@ -221,7 +245,8 @@ func SetTerminated(s *corev1.PodStatus, container string, code int32, reason str
 			started = cs.State.Running.StartedAt
 		}
 		cs.State = corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{ExitCode: code, Reason: reason, StartedAt: started, FinishedAt: now()}}
-		cs.Ready = false
+		// like the kubelet: a regular init container that completed successfully is Ready
+		cs.Ready = code == 0 && IsInit(s, container) && !strings.HasPrefix(cs.ContainerID, SidecarIDPrefix)
 	}
 	Recompute(s)
 }
@@ -296,6 +321,8 @@ func Recompute(s *corev1.PodStatus) {
 		}
 	}
 	switch {
+	case s.Reason == "DeadlineExceeded": // activeDeadlineSeconds: always Failed, whatever the exit codes
+		s.Phase = corev1.PodFailed
 	case initFailed && s.Phase == corev1.PodFailed:
 	case !initDone:
 		// still initializing (or an init container is being retried)

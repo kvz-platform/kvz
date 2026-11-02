@@ -11,6 +11,7 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"k8s.io/kubernetes/third_party/forked/golang/expansion"
@@ -604,7 +605,8 @@ func (b *Backend) run(ctx context.Context, p *corev1.Pod, ps *pod) error {
 			break
 		}
 		reason, ev := "CreateContainerConfigError", "Failed"
-		if _, ok := err.(mountError); ok {
+		var spErr *volumes.SubPathError
+		if _, ok := err.(mountError); ok && !errors.As(err, &spErr) {
 			reason, ev = "ContainerCreating", "FailedMount"
 		}
 		b.t.Update(p.Namespace, p.Name, func(s *corev1.PodStatus) {

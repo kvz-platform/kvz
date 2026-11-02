@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/GrowlyX/kvz/pkg/downward"
+	"k8s.io/kubernetes/third_party/forked/golang/expansion"
 	"os"
 	"path/filepath"
 	"sort"
@@ -91,15 +92,19 @@ func (m *Materializer) Materialize(pod *corev1.Pod, podDir string) (map[string][
 			tmpfs := strings.HasPrefix(p, TmpfsPrefix)
 			sub := vm.SubPath
 			if vm.SubPathExpr != "" {
-				sub = expandEnv(vm.SubPathExpr, c.Env)
+				var missing []string
+				sub, missing = expandEnvStrict(vm.SubPathExpr, c.Env)
+				if len(missing) > 0 {
+					return nil, &SubPathError{fmt.Sprintf("failed to prepare subPath for volumeMount %q of container %q: missing value for %s", vm.Name, c.Name, strings.Join(missing, ", "))}
+				}
 			}
 			if sub != "" {
 				if filepath.IsAbs(sub) {
-					return nil, fmt.Errorf("failed to prepare subPath for volumeMount %q of container %q: subpath %q must not be absolute", vm.Name, c.Name, sub)
+					return nil, &SubPathError{fmt.Sprintf("failed to prepare subPath for volumeMount %q of container %q: subpath %q must not be absolute", vm.Name, c.Name, sub)}
 				}
 				for _, part := range strings.Split(filepath.ToSlash(sub), "/") {
 					if part == ".." {
-						return nil, fmt.Errorf("failed to prepare subPath for volumeMount %q of container %q: subpath %q must not contain '..'", vm.Name, c.Name, sub)
+						return nil, &SubPathError{fmt.Sprintf("failed to prepare subPath for volumeMount %q of container %q: subpath %q must not contain '..'", vm.Name, c.Name, sub)}
 					}
 				}
 				p = filepath.Join(p, sub)
@@ -194,35 +199,26 @@ func downwardFiles(pod *corev1.Pod, items []corev1.DownwardAPIVolumeFile) map[st
 	return out
 }
 
-// expandEnv expands $(VAR) references like the kubelet (unknown vars stay as is,
-// $$ escapes).
-func expandEnv(in string, env []corev1.EnvVar) string {
+// SubPathError is a container configuration error (CreateContainerConfigError),
+// not a volume that is still being set up.
+type SubPathError struct{ msg string }
+
+func (e *SubPathError) Error() string { return e.msg }
+
+// expandEnvStrict expands $(VAR) like the kubelet does for subPathExpr:
+// unknown or empty variables are reported as missing.
+func expandEnvStrict(in string, env []corev1.EnvVar) (string, []string) {
 	vals := map[string]string{}
 	for _, e := range env {
 		vals[e.Name] = e.Value
 	}
-	var b strings.Builder
-	for i := 0; i < len(in); i++ {
-		if in[i] == '$' && i+1 < len(in) {
-			if in[i+1] == '$' {
-				b.WriteByte('$')
-				i++
-				continue
-			}
-			if in[i+1] == '(' {
-				if j := strings.IndexByte(in[i+2:], ')'); j >= 0 {
-					name := in[i+2 : i+2+j]
-					if v, ok := vals[name]; ok {
-						b.WriteString(v)
-					} else {
-						b.WriteString(in[i : i+3+j])
-					}
-					i += 2 + j
-					continue
-				}
-			}
+	var missing []string
+	out := expansion.Expand(in, func(k string) string {
+		v, ok := vals[k]
+		if !ok || v == "" {
+			missing = append(missing, k)
 		}
-		b.WriteByte(in[i])
-	}
-	return b.String()
+		return v
+	})
+	return out, missing
 }

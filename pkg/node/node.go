@@ -243,7 +243,7 @@ func Run(ctx context.Context, o Options) error {
 		Secrets: scmInf.Core().V1().Secrets().Lister(), Services: scmInf.Core().V1().Services().Lister(),
 	}
 	t := rt.NewTracker()
-	vols := &volumes.Materializer{ConfigMaps: pc.ConfigMaps, Secrets: pc.Secrets}
+	vols := &volumes.Materializer{ConfigMaps: pc.ConfigMaps, Secrets: pc.Secrets, Client: cs}
 	p := &Provider{t: t, backends: map[string]rt.Backend{}, def: o.DefaultHandler, hostIP: o.NodeIP}
 	cidr := os.Getenv("KVZ_POD_CIDR")
 	if cidr == "" {

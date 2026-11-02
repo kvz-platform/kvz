@@ -3,17 +3,22 @@
 package volumes
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 
+	authv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
 	corev1listers "k8s.io/client-go/listers/core/v1"
 )
 
 type Materializer struct {
 	ConfigMaps corev1listers.ConfigMapLister
 	Secrets    corev1listers.SecretLister
+	Client     kubernetes.Interface // for projected service-account tokens
 }
 
 // Materialize writes volume contents under podDir/volumes and returns, per
@@ -60,8 +65,16 @@ func (m *Materializer) Materialize(pod *corev1.Pod, podDir string) (map[string][
 			if err := write(dst, s.Data, v.Secret.Items); err != nil {
 				return nil, err
 			}
+		case v.Projected != nil:
+			files, err := m.projected(pod, v.Projected)
+			if err != nil {
+				return nil, err
+			}
+			if err := write(dst, files, nil); err != nil {
+				return nil, err
+			}
 		default:
-			continue // projected SA tokens etc. are not supported yet
+			continue
 		}
 		paths[v.Name] = dst
 	}
@@ -108,4 +121,91 @@ func write(dir string, files map[string][]byte, items []corev1.KeyToPath) error 
 		}
 	}
 	return nil
+}
+
+// projected materializes a projected volume: service-account tokens (via the
+// TokenRequest API, bound to the pod), configMaps, secrets and the downward
+// API's namespace/name fields. This is what kube-api-access-* volumes need.
+func (m *Materializer) projected(pod *corev1.Pod, pv *corev1.ProjectedVolumeSource) (map[string][]byte, error) {
+	files := map[string][]byte{}
+	for _, src := range pv.Sources {
+		switch {
+		case src.ServiceAccountToken != nil && m.Client != nil:
+			t := src.ServiceAccountToken
+			exp := int64(24 * 3600)
+			if t.ExpirationSeconds != nil && *t.ExpirationSeconds > exp {
+				exp = *t.ExpirationSeconds
+			}
+			req := &authv1.TokenRequest{Spec: authv1.TokenRequestSpec{
+				ExpirationSeconds: &exp,
+				BoundObjectRef:    &authv1.BoundObjectReference{Kind: "Pod", APIVersion: "v1", Name: pod.Name, UID: pod.UID},
+			}}
+			if t.Audience != "" {
+				req.Spec.Audiences = []string{t.Audience}
+			}
+			sa := pod.Spec.ServiceAccountName
+			if sa == "" {
+				sa = "default"
+			}
+			tr, err := m.Client.CoreV1().ServiceAccounts(pod.Namespace).CreateToken(context.Background(), sa, req, metav1.CreateOptions{})
+			if err != nil {
+				return nil, fmt.Errorf("service account token: %w", err)
+			}
+			files[t.Path] = []byte(tr.Status.Token)
+		case src.ConfigMap != nil && m.ConfigMaps != nil:
+			cm, err := m.ConfigMaps.ConfigMaps(pod.Namespace).Get(src.ConfigMap.Name)
+			if err != nil {
+				if src.ConfigMap.Optional != nil && *src.ConfigMap.Optional {
+					continue
+				}
+				return nil, fmt.Errorf("configmap %s: %w", src.ConfigMap.Name, err)
+			}
+			all := map[string][]byte{}
+			for k, v := range cm.Data {
+				all[k] = []byte(v)
+			}
+			for k, v := range cm.BinaryData {
+				all[k] = v
+			}
+			pick(files, all, src.ConfigMap.Items)
+		case src.Secret != nil && m.Secrets != nil:
+			sec, err := m.Secrets.Secrets(pod.Namespace).Get(src.Secret.Name)
+			if err != nil {
+				if src.Secret.Optional != nil && *src.Secret.Optional {
+					continue
+				}
+				return nil, fmt.Errorf("secret %s: %w", src.Secret.Name, err)
+			}
+			pick(files, sec.Data, src.Secret.Items)
+		case src.DownwardAPI != nil:
+			for _, it := range src.DownwardAPI.Items {
+				if it.FieldRef == nil {
+					continue
+				}
+				switch it.FieldRef.FieldPath {
+				case "metadata.namespace":
+					files[it.Path] = []byte(pod.Namespace)
+				case "metadata.name":
+					files[it.Path] = []byte(pod.Name)
+				case "metadata.uid":
+					files[it.Path] = []byte(pod.UID)
+				}
+			}
+		}
+	}
+	return files, nil
+}
+
+func pick(dst, src map[string][]byte, items []corev1.KeyToPath) {
+	if len(items) == 0 {
+		for k, v := range src {
+			dst[k] = v
+		}
+		return
+	}
+	for _, it := range items {
+		if v, ok := src[it.Key]; ok {
+			dst[it.Path] = v
+		}
+	}
 }

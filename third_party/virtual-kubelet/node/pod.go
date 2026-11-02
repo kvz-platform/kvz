@@ -258,6 +258,7 @@ func (pc *PodController) updatePodStatus(ctx context.Context, podFromKubernetes 
 	// kvz patch: pods/status also persists labels, annotations and finalizers,
 	// so a provider copy with stale metadata reverted users' changes. Send
 	// the API server's current metadata with the provider's status.
+	mergeConditions(podFromKubernetes, podFromProvider)
 	podFromProvider.Labels = podFromKubernetes.Labels
 	podFromProvider.Annotations = podFromKubernetes.Annotations
 	podFromProvider.Finalizers = podFromKubernetes.Finalizers
@@ -448,4 +449,56 @@ func getUIDAndMetaNamespaceKey(key string) (string, string) {
 	uid := key[idx+1:]
 	metaKey := key[:idx]
 	return uid, metaKey
+}
+
+// kvz patch: kubeletConditions are the pod conditions the node owns; others
+// (PodScheduled, DisruptionTarget, readiness-gate conditions set by
+// controllers) are kept from the API server instead of being overwritten.
+var kubeletConditions = map[corev1.PodConditionType]bool{
+	corev1.PodInitialized: true, corev1.PodReady: true, corev1.ContainersReady: true,
+	corev1.PodReadyToStartContainers: true,
+}
+
+func mergeConditions(fromK8s, fromProvider *corev1.Pod) {
+	var merged []corev1.PodCondition
+	for _, c := range fromK8s.Status.Conditions {
+		if !kubeletConditions[c.Type] {
+			merged = append(merged, c)
+		}
+	}
+	for _, c := range fromProvider.Status.Conditions {
+		if kubeletConditions[c.Type] {
+			merged = append(merged, c)
+		}
+	}
+	// readiness gates: Ready also needs every gate's condition to be True
+	for _, g := range fromProvider.Spec.ReadinessGates {
+		ok, found := false, false
+		for _, c := range merged {
+			if c.Type == g.ConditionType {
+				found, ok = true, c.Status == corev1.ConditionTrue
+			}
+		}
+		if ok {
+			continue
+		}
+		msg := fmt.Sprintf("corresponding condition of pod readiness gate %q does not exist.", g.ConditionType)
+		if found {
+			msg = fmt.Sprintf("the status of pod readiness gate %q is not \"True\", but False", g.ConditionType)
+		}
+		for i := range merged {
+			if merged[i].Type == corev1.PodReady && merged[i].Status == corev1.ConditionTrue {
+				merged[i].Status = corev1.ConditionFalse
+				merged[i].Reason = "ReadinessGatesNotReady"
+				merged[i].Message = msg
+				merged[i].LastTransitionTime = metav1.Now()
+				for _, kc := range fromK8s.Status.Conditions { // no-op updates must not loop
+					if kc.Type == corev1.PodReady && kc.Status == corev1.ConditionFalse {
+						merged[i].LastTransitionTime = kc.LastTransitionTime
+					}
+				}
+			}
+		}
+	}
+	fromProvider.Status.Conditions = merged
 }

@@ -369,6 +369,12 @@ func (pc *PodController) Run(ctx context.Context, podSyncWorkers int) (retErr er
 					// Reset this to avoid re-adding it continuously
 					kPod.lastPodStatusUpdateSkipped = false
 				}
+				// kvz patch: readiness-gate conditions are set by other
+				// controllers; Ready must be recomputed when they change.
+				if len(newPod.Spec.ReadinessGates) > 0 && !cmp.Equal(oldPod.Status.Conditions, newPod.Status.Conditions) &&
+					kPod.lastPodStatusReceivedFromProvider != nil {
+					pc.syncPodStatusFromProvider.Enqueue(ctx, key)
+				}
 				kPod.Unlock()
 
 				if podShouldEnqueue(oldPod, newPod) {

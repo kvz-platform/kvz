@@ -1,9 +1,14 @@
 # kvz CI and releases. See docs/releasing.md for agent setup and secrets.
 #
-# Every step runs on Apple Silicon Macs (queue "macos"): kvz is darwin-only and
-# its tests boot real VMs with Virtualization.framework, which cloud CI can't
-# nest. Branch and PR builds run checks and end-to-end tests. Builds of a
-# release tag (v1.35.6-12) build, sign, notarize, publish and update Homebrew.
+# Two kinds of Apple Silicon agents:
+#   macos-medium  Buildkite-hosted Macs (macOS 26, Xcode 26): lint, unit tests,
+#                 build. No machines of our own needed.
+#   macos         our own Macs: end-to-end tests and releases. These boot real
+#                 VMs with Virtualization.framework (hosted Macs are VMs and
+#                 can't nest), build the kernel with Apple container, and hold
+#                 the Developer ID signing keychain.
+# Branch and PR builds run checks and end-to-end tests. Builds of a release tag
+# (v1.35.6-12) build, sign, notarize, publish and update Homebrew.
 
 agents:
   queue: macos
@@ -16,17 +21,25 @@ steps:
   - label: ":go: Lint"
     key: lint
     if: build.tag == null
-    command: make lint
+    agents: {queue: macos-medium}
+    command:
+      - hack/ci/ensure-go.sh
+      - make lint
 
   - label: ":test_tube: Unit tests"
     key: test
     if: build.tag == null
-    command: make test
+    agents: {queue: macos-medium}
+    command:
+      - hack/ci/ensure-go.sh
+      - make test
 
   - label: ":hammer: Build"
     key: build
     if: build.tag == null
+    agents: {queue: macos-medium}
     command:
+      - hack/ci/ensure-go.sh
       - make build
       - bin/kvz version
     artifact_paths: bin/kvz
@@ -58,6 +71,7 @@ steps:
   - label: ":label: Tag release"
     if: build.branch == "main" && build.tag == null
     depends_on: release-gate
+    agents: {queue: macos-medium}
     command:
       - export GITHUB_TOKEN="$(buildkite-agent secret get GITHUB_TOKEN)"
       - git config user.name "kvz release bot"

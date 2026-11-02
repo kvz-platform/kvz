@@ -56,31 +56,51 @@ hack/release/notes.sh "$(hack/release/next-version.sh)"
 
 ### Pipeline
 
-Create one pipeline for `kvz-platform/kvz` with this single step:
+The pipeline is [buildkite.com/kvz/kvz](https://buildkite.com/kvz/kvz), in the
+org's Default cluster. Its only built-in step is
+`buildkite-agent pipeline upload`. Everything else lives in
+[`.buildkite/pipeline.yml`](../.buildkite/pipeline.yml). It builds branches,
+pull requests and tags, and reports commit statuses to GitHub.
 
-```yaml
-steps:
-  - command: buildkite-agent pipeline upload
-```
-
-Then turn on **Build tags** and **Build pull requests** in the pipeline's
-GitHub settings. Everything else lives in
-[`.buildkite/pipeline.yml`](../.buildkite/pipeline.yml).
+GitHub triggers builds through the **Buildkite GitHub App**, installed on the
+`kvz-platform` org. The app also gives hosted agents access to clone the repo
+while it's private.
 
 ### Agents
 
-All steps run on the `macos` queue. kvz only runs on macOS, and its tests boot
-real VMs, which hosted CI can't do because Virtualization.framework doesn't
-nest. Use dedicated Apple Silicon Macs on macOS 26 or later, with:
+| Queue | Machines | Runs |
+|---|---|---|
+| `macos-medium` | Buildkite-hosted Macs (macOS 26, Xcode 26) | lint, unit tests, build, tagging a release |
+| `macos` | our own Apple Silicon Macs | end-to-end tests and every release step |
 
-- the Buildkite agent, started with `tags="queue=macos"` and running in the
-  logged-in user's session (a LaunchAgent, not a LaunchDaemon), because
-  Virtualization.framework needs a GUI session;
-- Go (the version in `go.mod`), the Xcode command line tools, `git` and `gh`;
-- Apple's `container` tool, for building the pod kernel;
-- the pod kernel at `~/.kvz/kernel/Image`, for end-to-end tests;
-- optionally `tart`, plus `KVZ_E2E_MACOS_IMAGE` in the agent environment, to
-  run the macOS VM test.
+The end-to-end tests and releases can't run on hosted Macs. They boot real VMs
+with Virtualization.framework, and hosted Macs are VMs themselves, which can't
+nest another macOS-level VM host. They also need Apple's `container` (to build
+the kernel) and the Developer ID keychain.
+
+Each self-hosted Mac needs macOS 26 or later, and:
+
+- **The Buildkite agent**, started with `tags="queue=macos"` and run as a
+  LaunchAgent in the logged-in user's session, not a LaunchDaemon, because
+  Virtualization.framework needs a GUI session. The agent token is in the
+  maintainer's keychain:
+
+  ```sh
+  brew install buildkite/buildkite/buildkite-agent
+  TOKEN=$(security find-generic-password -s buildkite-agent-token-kvz -w)
+  sed -i '' "s/^token=.*/token=\"$TOKEN\"/; s/^#* *tags=.*/tags=\"queue=macos\"/" \
+    "$(brew --prefix)/etc/buildkite-agent/buildkite-agent.cfg"
+  brew services start buildkite/buildkite/buildkite-agent
+  ```
+
+- **Tools:** Go (the version in `go.mod`), the Xcode command line tools, `git`
+  and `gh`.
+- **Apple's `container` tool**, for building the pod kernel.
+- **The pod kernel** at `~/.kvz/kernel/Image`, for end-to-end tests.
+- **Optionally, macOS VM tests:** `tart`, plus `KVZ_E2E_MACOS_IMAGE` in the
+  agent environment.
+- **Git access** to `kvz-platform/kvz`, such as an SSH key added as a read-only
+  deploy key, while the repo is private.
 
 The end-to-end step runs one cluster per Mac at a time
 (`concurrency_group: kvz/e2e/<agent>`). Don't run a personal kvz on CI Macs,

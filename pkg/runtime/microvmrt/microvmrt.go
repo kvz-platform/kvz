@@ -624,7 +624,11 @@ func (b *Backend) run(ctx context.Context, p *corev1.Pod, ps *pod) error {
 		return err
 	}
 	mac := macFor(ps.ip)
-	nic, err := b.pnet.AttachPod(ctx, ps.ip, mac)
+	// the NIC lives as long as this VM: a VM that dies on its own (guest panic,
+	// init OOM-killed) must not leave a switch port nobody drains
+	nicCtx, nicCancel := context.WithCancel(ctx)
+	defer nicCancel()
+	nic, err := b.pnet.AttachPod(nicCtx, ps.ip, mac)
 	if err != nil {
 		return err
 	}

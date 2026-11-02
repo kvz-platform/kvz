@@ -163,6 +163,9 @@ func (s *fastSwitch) handle(p *swPort, frame []byte) {
 		}
 	}
 	if dst[0]&1 == 1 { // broadcast / multicast: flood
+		if p.uplink && s.proxyARP(p, frame) {
+			return
+		}
 		if p != overlayPort {
 			s.flood(p, frame)
 		}
@@ -289,4 +292,30 @@ func sendFrom(p *swPort, fd int, frame []byte) {
 		return
 	}
 	send(fd, frame)
+}
+
+// proxyARP answers the netstack's ARP requests for pods on other nodes with a
+// MAC derived from the IP; frames sent there are routed over the overlay.
+func (s *fastSwitch) proxyARP(p *swPort, frame []byte) bool {
+	if s.ov == nil || len(frame) < 42 || frame[12] != 0x08 || frame[13] != 0x06 || frame[20] != 0 || frame[21] != 1 {
+		return false
+	}
+	var tip [4]byte
+	copy(tip[:], frame[38:42])
+	if _, remote := s.ov.lookup(tip); !remote {
+		return false
+	}
+	mac := [6]byte{0x02, 0x6b, tip[0], tip[1], tip[2], tip[3]}
+	r := make([]byte, 42)
+	copy(r[0:6], frame[6:12])
+	copy(r[6:12], mac[:])
+	r[12], r[13] = 0x08, 0x06
+	copy(r[14:20], []byte{0, 1, 8, 0, 6, 4})
+	r[20], r[21] = 0, 2 // reply
+	copy(r[22:28], mac[:])
+	copy(r[28:32], tip[:])
+	copy(r[32:38], frame[22:28])
+	copy(r[38:42], frame[28:32])
+	sendShared(p.fd, r)
+	return true
 }

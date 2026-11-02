@@ -324,3 +324,15 @@ func WillRestart(policy corev1.RestartPolicy, code int32) bool {
 	}
 	return true
 }
+
+// ContainerStats / PodStats are cumulative CPU time and current memory.
+type ContainerStats struct {
+	CPUNs    uint64
+	MemBytes uint64
+}
+
+type PodStats struct {
+	CPUNs      uint64
+	MemBytes   uint64
+	Containers map[string]ContainerStats
+}

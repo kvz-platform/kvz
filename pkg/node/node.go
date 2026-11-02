@@ -13,9 +13,11 @@ import (
 	"os"
 	"runtime"
 	"strconv"
+	"sync"
 	"time"
 
 	dto "github.com/prometheus/client_model/go"
+	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/mem"
 	vknode "github.com/virtual-kubelet/virtual-kubelet/node"
 	"github.com/virtual-kubelet/virtual-kubelet/node/api"
@@ -63,6 +65,8 @@ type Options struct {
 
 // Provider multiplexes backends.
 type Provider struct {
+	nodeName string
+	started  metav1.Time
 	t        *rt.Tracker
 	backends map[string]rt.Backend
 	def      string
@@ -230,8 +234,63 @@ func (p *Provider) AttachToContainer(ctx context.Context, ns, name, c string, at
 	return nil
 }
 
-func (p *Provider) GetStatsSummary(context.Context) (*statsv1alpha1.Summary, error) {
-	return &statsv1alpha1.Summary{}, nil
+type statser interface {
+	Stats(ctx context.Context, pod *corev1.Pod) (*rt.PodStats, error)
+}
+
+// GetStatsSummary serves the kubelet /stats/summary API (consumed by kvz's
+// metrics API / kubectl top / HPA).
+func (p *Provider) GetStatsSummary(ctx context.Context) (*statsv1alpha1.Summary, error) {
+	now := metav1.Now()
+	sum := &statsv1alpha1.Summary{Node: statsv1alpha1.NodeStats{NodeName: p.nodeName, StartTime: p.started}}
+	if t, err := cpu.TimesWithContext(ctx, false); err == nil && len(t) > 0 {
+		ns := uint64((t[0].User + t[0].System + t[0].Nice) * 1e9)
+		sum.Node.CPU = &statsv1alpha1.CPUStats{Time: now, UsageCoreNanoSeconds: &ns}
+	}
+	if vm, err := mem.VirtualMemoryWithContext(ctx); err == nil {
+		used := vm.Used
+		avail := vm.Available
+		sum.Node.Memory = &statsv1alpha1.MemoryStats{Time: now, WorkingSetBytes: &used, AvailableBytes: &avail, UsageBytes: &used}
+	}
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	for _, pod := range p.t.List() {
+		b, err := p.backendFor(pod)
+		if err != nil {
+			continue
+		}
+		st, ok := b.(statser)
+		if !ok {
+			continue
+		}
+		wg.Add(1)
+		go func(pod *corev1.Pod) {
+			defer wg.Done()
+			sctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+			defer cancel()
+			ps, err := st.Stats(sctx, pod)
+			if err != nil || ps == nil {
+				return
+			}
+			pst := statsv1alpha1.PodStats{PodRef: statsv1alpha1.PodReference{Name: pod.Name, Namespace: pod.Namespace, UID: string(pod.UID)}, StartTime: now}
+			var podCPU, podMem uint64
+			for n, c := range ps.Containers {
+				cpuNs, memB := c.CPUNs, c.MemBytes
+				podCPU += cpuNs
+				podMem += memB
+				pst.Containers = append(pst.Containers, statsv1alpha1.ContainerStats{Name: n, StartTime: now,
+					CPU:    &statsv1alpha1.CPUStats{Time: now, UsageCoreNanoSeconds: &cpuNs},
+					Memory: &statsv1alpha1.MemoryStats{Time: now, WorkingSetBytes: &memB, UsageBytes: &memB}})
+			}
+			pst.CPU = &statsv1alpha1.CPUStats{Time: now, UsageCoreNanoSeconds: &podCPU}
+			pst.Memory = &statsv1alpha1.MemoryStats{Time: now, WorkingSetBytes: &podMem, UsageBytes: &podMem}
+			mu.Lock()
+			sum.Pods = append(sum.Pods, pst)
+			mu.Unlock()
+		}(pod)
+	}
+	wg.Wait()
+	return sum, nil
 }
 
 func (p *Provider) GetMetricsResource(context.Context) ([]*dto.MetricFamily, error) { return nil, nil }
@@ -315,7 +374,7 @@ func Run(ctx context.Context, o Options) error {
 	}
 	t := rt.NewTracker()
 	vols := &volumes.Materializer{ConfigMaps: pc.ConfigMaps, Secrets: pc.Secrets, Client: cs}
-	p := &Provider{t: t, backends: map[string]rt.Backend{}, def: o.DefaultHandler, hostIP: o.NodeIP}
+	p := &Provider{nodeName: o.Name, started: metav1.Now(), t: t, backends: map[string]rt.Backend{}, def: o.DefaultHandler, hostIP: o.NodeIP}
 	cidr := o.PodCIDR
 	if cidr == "" {
 		cidr = os.Getenv("KVZ_POD_CIDR")

@@ -79,6 +79,10 @@ func Prepare(cfg Config) (*ControlPlane, error) {
 	if _, _, err := ca.Issue("apiserver-kubelet-client", "kube-apiserver-kubelet-client", []string{"system:masters"}, nil, nil, false); err != nil {
 		return nil, err
 	}
+	// identity the aggregator presents to extension API servers (metrics.k8s.io)
+	if _, _, err := ca.Issue("front-proxy-client", "front-proxy-client", nil, nil, nil, false); err != nil {
+		return nil, err
+	}
 	if _, _, err := pki.ServiceAccountKey(tlsDir); err != nil {
 		return nil, err
 	}
@@ -176,6 +180,14 @@ func (cp *ControlPlane) Run(ctx context.Context, ready chan<- struct{}) error {
 		"--authorization-mode=Node,RBAC",
 		"--enable-admission-plugins=NodeRestriction",
 		"--allow-privileged=true",
+		"--enable-aggregator-routing=true", // extension APIs are served from the host (endpoints), not via a ClusterIP
+		"--proxy-client-cert-file=" + p("front-proxy-client.crt"),
+		"--proxy-client-key-file=" + p("front-proxy-client.key"),
+		"--requestheader-client-ca-file=" + p("ca.crt"),
+		"--requestheader-allowed-names=front-proxy-client",
+		"--requestheader-username-headers=X-Remote-User",
+		"--requestheader-group-headers=X-Remote-Group",
+		"--requestheader-extra-headers-prefix=X-Remote-Extra-",
 		"--kubelet-preferred-address-types=InternalIP,Hostname",
 		"--profiling=false",
 		"--anonymous-auth=false",

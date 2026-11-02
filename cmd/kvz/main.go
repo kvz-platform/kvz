@@ -27,9 +27,11 @@ import (
 
 	"github.com/GrowlyX/kvz/pkg/controlplane"
 	"github.com/GrowlyX/kvz/pkg/join"
+	"github.com/GrowlyX/kvz/pkg/metrics"
 	"github.com/GrowlyX/kvz/pkg/node"
 	"github.com/GrowlyX/kvz/pkg/pki"
 	"github.com/GrowlyX/kvz/pkg/storage"
+	aggclient "k8s.io/kube-aggregator/pkg/client/clientset_generated/clientset"
 )
 
 func main() {
@@ -160,6 +162,21 @@ func serverCmd() *cobra.Command {
 					klog.ErrorS(err, "local-path storage class")
 				}
 				go storage.Run(ctx, adm, nf.name)
+				tls := func(n string) string { return filepath.Join(cp.CA.Dir, n) }
+				if ms, err := metrics.New(adm, tls("ca.crt"), tls("apiserver-kubelet-client.crt"), tls("apiserver-kubelet-client.key")); err == nil {
+					go func() {
+						if err := ms.Run(ctx, fmt.Sprintf(":%d", apiPort+4), tls("ca.crt"), tls("apiserver.crt"), tls("apiserver.key")); err != nil {
+							klog.ErrorS(err, "metrics API")
+						}
+					}()
+					if cfg, err := clientcmd.BuildConfigFromFlags("", cp.AdminKubeconfig); err == nil {
+						if agg, err := aggclient.NewForConfig(cfg); err == nil {
+							if err := metrics.Register(ctx, adm, agg, nf.nodeIP, apiPort+4); err != nil {
+								klog.ErrorS(err, "register metrics API")
+							}
+						}
+					}
+				}
 			}
 			cidrs := join.NewCIDRAllocator(filepath.Join(nf.dataDir, "server", "podcidrs.json"))
 			localCIDR := cidrs.For(nf.name)

@@ -85,6 +85,11 @@ func handleExec(conn *os.File) {
 	var mu sync.Mutex
 	stdout := frameWriter{conn, &mu, fStdout}
 	stderr := frameWriter{conn, &mu, fStderr}
+	if req.Argv[0] == "__kvz_stats" {
+		stdout.Write(statsJSON())
+		sendExit(conn, &mu, 0)
+		return
+	}
 	c, ok := specByName[req.Container]
 	if !ok {
 		for _, v := range specByName {

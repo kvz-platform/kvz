@@ -1,7 +1,7 @@
 #!/bin/sh
 # Prints the kvz version for this checkout.
-#   on a release tag:  v1.35.6-12
-#   anywhere else:     v1.35.6-dev+<short sha>
+#   on a release tag:  v1.35.10-12
+#   anywhere else:     v1.35.10-dev+<short sha>
 # The Kubernetes part always comes from K8S_VERSION in the Makefile.
 set -eu
 cd "$(dirname "$0")/.."

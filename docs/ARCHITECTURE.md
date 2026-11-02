@@ -25,7 +25,7 @@ macOS, plus a node agent whose pods are native macOS workloads.
 
 ## Control plane
 
-* `k8s.io/kubernetes` v1.35.6 is imported as a library (staging modules pinned,
+* `k8s.io/kubernetes` v1.35.10 is imported as a library (staging modules pinned,
   no fork). kube-apiserver, controller-manager and scheduler run in one darwin
   process. Two shims make that possible:
   * `logsapi.ReapplyHandling = ReapplyHandlingIgnoreUnchanged`

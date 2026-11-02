@@ -1,7 +1,7 @@
 BIN ?= bin/kvz
 KVZ_VERSION ?= $(shell hack/version.sh)
 GOFLAGS ?= -trimpath
-K8S_VERSION ?= v1.35.6
+K8S_VERSION ?= v1.35.10
 KVZ_COMMIT := $(shell git rev-parse HEAD 2>/dev/null || echo unknown)
 BUILD_DATE := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 VPKG := k8s.io/component-base/version

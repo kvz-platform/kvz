@@ -199,7 +199,6 @@ func downwardFiles(pod *corev1.Pod, items []corev1.DownwardAPIVolumeFile) map[st
 	return out
 }
 
-
 // SubPathError is a container configuration error (CreateContainerConfigError),
 // not a volume that is still being set up.
 type SubPathError struct{ msg string }

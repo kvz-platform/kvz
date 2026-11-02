@@ -225,7 +225,13 @@ func (s *fastSwitch) deliverInbound(pkt []byte) {
 		mac = s.nat.gwMAC
 	}
 	copy(frame[0:6], mac[:])
-	copy(frame[6:12], s.nat.gwMAC[:])
+	// Source MAC: the one proxy-ARP advertises for the remote IP. Never the
+	// gateway's: gvisor-tap-vsock's switch learns source MACs, and once it
+	// believed the gateway MAC lived on the uplink it stopped forwarding the
+	// netstack's own broadcasts (ARP) to us, breaking every connection the
+	// node originates to pods (egress proxy, port-forward, LoadBalancer).
+	frame[6], frame[7] = 0x02, 0x6b
+	copy(frame[8:12], pkt[12:16])
 	frame[12], frame[13] = 0x08, 0x00
 	copy(frame[ethHdr:], pkt)
 	s.handle(overlayPort, frame)

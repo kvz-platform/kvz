@@ -41,15 +41,16 @@ import (
 var initBin []byte
 
 type Backend struct {
-	hostIP string
-	dir    string
-	kernel string
-	initrd string
-	t      *rt.Tracker
-	vols   *volumes.Materializer
-	images *image.Store
-	pnet   *podnet.Net
-	dns    []string
+	hostIP        string
+	dir           string
+	kernel        string
+	kernelHotplug bool // pod kernel can online CPUs at runtime
+	initrd        string
+	t             *rt.Tracker
+	vols          *volumes.Materializer
+	images        *image.Store
+	pnet          *podnet.Net
+	dns           []string
 
 	mu   sync.Mutex
 	pods map[string]*pod
@@ -126,7 +127,8 @@ func New(dataDir, hostIP string, t *rt.Tracker, vols *volumes.Materializer, pn *
 	if err := store.LoadRegistries(regPath); err != nil {
 		return nil, err
 	}
-	return &Backend{hostIP: hostIP, dir: filepath.Join(dataDir, "mvm"), kernel: DefaultKernel(), initrd: initrd, t: t, vols: vols,
+	kernel := DefaultKernel()
+	return &Backend{hostIP: hostIP, dir: filepath.Join(dataDir, "mvm"), kernel: kernel, kernelHotplug: kernelHasHotplug(kernel), initrd: initrd, t: t, vols: vols,
 		images: store, pnet: pn, dns: []string{"10.43.0.10"},
 		pods: map[string]*pod{}, pre: map[string]net.IP{}, slots: make(chan struct{}, maxVMs)}, nil
 }
@@ -209,6 +211,7 @@ type spec struct {
 	Sysctls     map[string]string `json:"sysctls,omitempty"`
 	Search      []string          `json:"search"`
 	DNSOptions  []string          `json:"dns_options,omitempty"`
+	CPUOnline   string            `json:"cpu_online,omitempty"`
 	HostNetwork bool              `json:"host_network,omitempty"`
 	NodeIP      string            `json:"node_ip,omitempty"`
 	MTU         int               `json:"mtu"`
@@ -565,6 +568,24 @@ var defaultMemMB = func() uint64 {
 	return 2048
 }()
 
+// kernelHasHotplug reports whether the pod kernel can online CPUs at runtime
+// (kernel/build.sh installs its .config next to the Image). Without it,
+// maxcpus=1 would leave pods on one CPU, so the kernel boots them all.
+func kernelHasHotplug(kernel string) bool {
+	b, err := os.ReadFile(filepath.Join(filepath.Dir(kernel), "config"))
+	return err == nil && strings.Contains(string(b), "\nCONFIG_HOTPLUG_CPU=y\n")
+}
+
+// cpuOnlineMode: "boot" (kernel brings all vCPUs up), "before" (kvz-init
+// onlines them during rootfs/network setup, before containers start) or
+// "after" (once containers run). KVZ_CPU_ONLINE overrides.
+var cpuOnlineMode = func() string {
+	if v := os.Getenv("KVZ_CPU_ONLINE"); v == "boot" || v == "before" || v == "after" {
+		return v
+	}
+	return "before"
+}()
+
 var defaultVCPUs = func() uint {
 	if v, err := strconv.Atoi(os.Getenv("KVZ_DEFAULT_VCPUS")); err == nil && v > 0 {
 		return uint(v)
@@ -638,6 +659,13 @@ func (b *Backend) run(ctx context.Context, p *corev1.Pod, ps *pod) error {
 		case <-time.After(delay):
 		}
 	}
+	// SMP bring-up of many vCPUs in every booting guest is costly when pods
+	// start in bulk; boot on one CPU and let kvz-init online the rest.
+	ncpu, extraArgs := vcpus(p), ""
+	if ncpu > 1 && cpuOnlineMode != "boot" && b.kernelHotplug {
+		sp.CPUOnline = cpuOnlineMode
+		extraArgs = "maxcpus=1"
+	}
 	raw, _ := json.Marshal(sp)
 	if err := os.WriteFile(filepath.Join(ps.dir, "spec.json"), raw, 0o644); err != nil {
 		return err
@@ -652,7 +680,7 @@ func (b *Backend) run(ctx context.Context, p *corev1.Pod, ps *pod) error {
 		return err
 	}
 	vm, err := microvm.Boot(microvm.Config{Kernel: b.kernel, Initrd: b.initrd, IP: ps.ip, GW: b.pnet.GW, Mask: b.pnet.Bits(),
-		CPUs: vcpus(p), MemoryMB: memMB(p), Shares: shares, ConsoleLog: consoleLog(ps.dir), NetFile: nic, MTU: b.pnet.MTU, MAC: mac})
+		CPUs: ncpu, MemoryMB: memMB(p), ExtraArgs: extraArgs, Shares: shares, ConsoleLog: consoleLog(ps.dir), NetFile: nic, MTU: b.pnet.MTU, MAC: mac})
 	if err != nil {
 		nic.Close()
 		return err

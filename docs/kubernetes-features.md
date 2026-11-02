@@ -1,7 +1,7 @@
 # Kubernetes features
 
 kvz runs upstream Kubernetes 1.35 (kube-apiserver, controller-manager and
-scheduler, unmodified) with embedded etcd 3.6. It passes the Sonobuoy quick
+scheduler, unmodified) with embedded etcd 3.7. It passes the Sonobuoy quick
 conformance check. This page lists what works today and the known limits.
 
 ## Workloads

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"github.com/GrowlyX/kvz/pkg/downward"
 	"github.com/GrowlyX/kvz/pkg/egress"
+	"github.com/GrowlyX/kvz/pkg/storage"
 	vknode "github.com/virtual-kubelet/virtual-kubelet/node"
 	"io"
 	"k8s.io/client-go/tools/cache"
@@ -403,6 +404,7 @@ func Run(ctx context.Context, o Options) error {
 		return fmt.Errorf("pod network: %w", err)
 	}
 	egress.Register(pn)
+	go storage.GCOrphans(ctx, cs)
 	if enabled["linux"] {
 		mb, err := microvmrt.New(o.DataDir, o.NodeIP, t, vols, pn)
 		if err != nil {

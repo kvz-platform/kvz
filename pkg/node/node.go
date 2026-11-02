@@ -145,14 +145,25 @@ func (p *Provider) DeletePod(ctx context.Context, pod *corev1.Pod) error {
 		return nil
 	}
 	err = b.Stop(ctx, pod)
-	// Report terminal status, then forget the pod.
+	// Report the terminal status, then forget the pod. Like the kubelet, a
+	// deleted pod ends Succeeded only if every container exited 0.
 	p.t.Update(pod.Namespace, pod.Name, func(s *corev1.PodStatus) {
+		failed := false
 		for i := range s.ContainerStatuses {
-			if s.ContainerStatuses[i].State.Terminated == nil {
-				rt.SetTerminated(s, s.ContainerStatuses[i].Name, 0, "Completed")
+			cs := &s.ContainerStatuses[i]
+			if cs.State.Terminated == nil {
+				rt.SetTerminated(s, cs.Name, 137, "Error")
+			}
+			if t := s.ContainerStatuses[i].State.Terminated; t != nil && t.ExitCode != 0 {
+				failed = true
 			}
 		}
-		s.Phase = corev1.PodSucceeded
+		if s.Phase != corev1.PodSucceeded && s.Phase != corev1.PodFailed {
+			s.Phase = corev1.PodSucceeded
+			if failed {
+				s.Phase = corev1.PodFailed
+			}
+		}
 	})
 	p.t.Delete(pod.Namespace, pod.Name)
 	return err

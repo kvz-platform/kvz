@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -370,6 +371,15 @@ func bootstrap(ctx context.Context, kubeconfig string) error {
 		RoleRef:  rbacv1.RoleRef{APIGroup: "rbac.authorization.k8s.io", Kind: "ClusterRole", Name: "kvz:node"},
 		Subjects: []rbacv1.Subject{{APIGroup: "rbac.authorization.k8s.io", Kind: "Group", Name: "system:nodes"}}}
 	if _, err := cs.RbacV1().ClusterRoleBindings().Create(ctx, crb, metav1.CreateOptions{}); err != nil && !apierrors.IsAlreadyExists(err) {
+		return err
+	}
+	// kube-dns: the conventional cluster DNS service. Each node's pod switch
+	// maps 10.43.0.10:53 to its local resolver (see node.Run).
+	dns := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: "kube-dns", Namespace: "kube-system",
+		Labels: map[string]string{"k8s-app": "kube-dns", "kubernetes.io/name": "CoreDNS", "kubernetes.io/cluster-service": "true"}},
+		Spec: corev1.ServiceSpec{ClusterIP: "10.43.0.10", Ports: []corev1.ServicePort{
+			{Name: "dns", Port: 53, Protocol: corev1.ProtocolUDP}, {Name: "dns-tcp", Port: 53, Protocol: corev1.ProtocolTCP}}}}
+	if _, err := cs.CoreV1().Services("kube-system").Create(ctx, dns, metav1.CreateOptions{}); err != nil && !apierrors.IsAlreadyExists(err) {
 		return err
 	}
 	return node.EnsureRuntimeClasses(ctx, cs)

@@ -59,6 +59,11 @@ func runServiceProxy(ctx context.Context, f informers.SharedInformerFactory, pn 
 			bySvc[s.Namespace+"/"+n] = append(bySvc[s.Namespace+"/"+n], s)
 		}
 		seen := map[key]bool{}
+		// cluster DNS VIP -> this node's gateway resolver (node-local DNS)
+		for _, proto := range []string{"UDP", "TCP"} {
+			pn.SetService(net.ParseIP(ClusterDNS), 53, proto, []podnet.Backend{{IP: pn.GW, Port: 53}})
+			seen[key{ClusterDNS, 53, proto}] = true
+		}
 		for _, svc := range svcs {
 			eps := bySvc[svc.Namespace+"/"+svc.Name]
 			if svc.Spec.ClusterIP == "" || svc.Spec.ClusterIP == corev1.ClusterIPNone {
@@ -81,6 +86,9 @@ func runServiceProxy(ctx context.Context, f informers.SharedInformerFactory, pn 
 				}
 			next:
 				continue
+			}
+			if svc.Spec.ClusterIP == ClusterDNS {
+				continue // programmed above (node-local resolver)
 			}
 			vip := net.ParseIP(svc.Spec.ClusterIP)
 			pn.AddDNS("svc.cluster.local.", svc.Name+"."+svc.Namespace, vip)
@@ -135,6 +143,9 @@ func runServiceProxy(ctx context.Context, f informers.SharedInformerFactory, pn 
 		klog.V(2).InfoS("services programmed", "count", len(seen))
 	}
 }
+
+// ClusterDNS is the kube-dns Service VIP pods use as their nameserver.
+const ClusterDNS = "10.43.0.10"
 
 func ready(e discoveryv1.Endpoint) bool { return e.Conditions.Ready == nil || *e.Conditions.Ready }
 

@@ -101,7 +101,7 @@ func New(dataDir, hostIP string, t *rt.Tracker, vols *volumes.Materializer, pn *
 		maxVMs = v
 	}
 	return &Backend{hostIP: hostIP, dir: filepath.Join(dataDir, "mvm"), kernel: DefaultKernel(), initrd: initrd, t: t, vols: vols,
-		images: image.NewStore(filepath.Join(home, ".kvz", "images")), pnet: pn, dns: []string{pn.GW.String()},
+		images: image.NewStore(filepath.Join(home, ".kvz", "images")), pnet: pn, dns: []string{"10.43.0.10"},
 		pods: map[string]*pod{}, pre: map[string]net.IP{}, slots: make(chan struct{}, maxVMs)}, nil
 }
 

@@ -189,11 +189,11 @@ func main() {
 		must(mount("overlay", root, "overlay", 0, "lowerdir="+lower+",upperdir="+up+",workdir="+wk), "overlay "+c.Name)
 		must(mount("proc", root+"/proc", "proc", 0, ""), "proc "+c.Name)
 		must(mount("/dev", root+"/dev", "", unix.MS_BIND|unix.MS_REC, ""), "dev "+c.Name)
-		_ = mount("shm", root+"/dev/shm", "tmpfs", 0, "mode=1777")
-		_ = mount("sysfs", root+"/sys", "sysfs", unix.MS_RDONLY, "")
-		_ = mount("tmpfs", root+"/run", "tmpfs", 0, "mode=755")
-		_ = mount("tmpfs", root+"/tmp", "tmpfs", 0, "mode=1777")
-		etc := root + "/etc"
+		_ = mount("shm", secureJoin(root, "/dev/shm"), "tmpfs", 0, "mode=1777")
+		_ = mount("sysfs", secureJoin(root, "/sys"), "sysfs", unix.MS_RDONLY, "")
+		_ = mount("tmpfs", secureJoin(root, "/run"), "tmpfs", 0, "mode=755")
+		_ = mount("tmpfs", secureJoin(root, "/tmp"), "tmpfs", 0, "mode=1777")
+		etc := secureJoin(root, "/etc")
 		_ = os.MkdirAll(etc, 0o755)
 		if len(spec.DNS) > 0 {
 			var b strings.Builder
@@ -213,7 +213,7 @@ func main() {
 			if m.Container != c.Name {
 				continue
 			}
-			dst := root + m.Path
+			dst := secureJoin(root, m.Path)
 			var flags uintptr
 			if m.ReadOnly {
 				flags |= unix.MS_RDONLY
@@ -485,4 +485,43 @@ func maybeRestart(name string, code int) {
 			startContainerOpts(c, true) // rotates the log for `kubectl logs --previous`
 		}
 	}()
+}
+
+// secureJoin resolves path inside root, interpreting symlinks (absolute or
+// relative) relative to root, so mounts never escape the container (e.g. the
+// common /var/run -> /run symlink). Missing components are created as dirs.
+func secureJoin(root, path string) string {
+	cur := ""
+	parts := strings.Split(filepath.Clean("/"+path), "/")
+	for hops := 0; len(parts) > 0 && hops < 64; {
+		p := parts[0]
+		parts = parts[1:]
+		if p == "" || p == "." {
+			continue
+		}
+		if p == ".." {
+			cur = filepath.Dir(cur)
+			if cur == "." {
+				cur = ""
+			}
+			continue
+		}
+		next := cur + "/" + p
+		fi, err := os.Lstat(root + next)
+		if err == nil && fi.Mode()&os.ModeSymlink != 0 {
+			hops++
+			target, err := os.Readlink(root + next)
+			if err != nil {
+				cur = next
+				continue
+			}
+			if filepath.IsAbs(target) {
+				cur = ""
+			}
+			parts = append(strings.Split(target, "/"), parts...)
+			continue
+		}
+		cur = next
+	}
+	return root + cur
 }

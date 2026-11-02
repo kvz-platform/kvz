@@ -69,7 +69,7 @@ func New(dataDir, hostIP string, t *rt.Tracker, vols *volumes.Materializer) *Bac
 	return b
 }
 
-func (b *Backend) Handler() string { return "linux" }
+func (b *Backend) Handler() string { return "apple" }
 
 func cid(pod *corev1.Pod, c string) string {
 	u := strings.ReplaceAll(string(pod.UID), "-", "")

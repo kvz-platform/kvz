@@ -33,6 +33,7 @@ import (
 	rt "github.com/GrowlyX/kvz/pkg/runtime"
 	"github.com/GrowlyX/kvz/pkg/runtime/linux"
 	"github.com/GrowlyX/kvz/pkg/runtime/macos"
+	"github.com/GrowlyX/kvz/pkg/runtime/microvmrt"
 	"github.com/GrowlyX/kvz/pkg/runtime/process"
 	"github.com/GrowlyX/kvz/pkg/runtime/volumes"
 )
@@ -171,7 +172,7 @@ var _ vknode.PodNotifier = (*Provider)(nil)
 
 // EnsureRuntimeClasses creates RuntimeClass objects for every backend.
 func EnsureRuntimeClasses(ctx context.Context, cs kubernetes.Interface) error {
-	for _, h := range []string{"linux", "darwin", "macos"} {
+	for _, h := range []string{"linux", "apple", "darwin", "macos"} {
 		rc := &nodev1.RuntimeClass{ObjectMeta: metav1.ObjectMeta{Name: h}, Handler: h,
 			Scheduling: &nodev1.Scheduling{NodeSelector: map[string]string{"kvz.dev/runtime-" + h: "true"}}}
 		if _, err := cs.NodeV1().RuntimeClasses().Create(ctx, rc, metav1.CreateOptions{}); err != nil && !apierrors.IsAlreadyExists(err) {
@@ -232,7 +233,14 @@ func Run(ctx context.Context, o Options) error {
 	vols := &volumes.Materializer{ConfigMaps: pc.ConfigMaps, Secrets: pc.Secrets}
 	p := &Provider{t: t, backends: map[string]rt.Backend{}, def: o.DefaultHandler, hostIP: o.NodeIP}
 	if enabled["linux"] {
-		p.backends["linux"] = linux.New(o.DataDir, o.NodeIP, t, vols)
+		mb, err := microvmrt.New(o.DataDir, t, vols)
+		if err != nil {
+			return fmt.Errorf("linux microvm runtime: %w", err)
+		}
+		p.backends["linux"] = mb
+	}
+	if enabled["apple"] {
+		p.backends["apple"] = linux.New(o.DataDir, o.NodeIP, t, vols)
 	}
 	if enabled["darwin"] {
 		p.backends["darwin"] = process.New(o.DataDir, o.NodeIP, t)

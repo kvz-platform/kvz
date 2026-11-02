@@ -42,7 +42,7 @@ func main() {
 		go func() { _ = http.ListenAndServe(addr, nil) }()
 	}
 	root := &cobra.Command{Use: "kvz", Short: "Native-macOS Kubernetes (k3s-style, single binary)", SilenceUsage: true}
-	root.AddCommand(serverCmd(), agentCmd(), versionCmd(), kubectlCmd())
+	root.AddCommand(serverCmd(), agentCmd(), versionCmd(), kubectlCmd(), installCmd(), uninstallCmd(), snapshotCmd())
 	if err := root.Execute(); err != nil {
 		os.Exit(1)
 	}
@@ -129,6 +129,9 @@ func serverCmd() *cobra.Command {
 	var disableAgent, noSync bool
 	var etcdSync string
 	var disable []string
+	var restorePath string
+	var snapInterval time.Duration
+	var snapRetention int
 	var sans []string
 	home, _ := os.UserHomeDir()
 	c := &cobra.Command{
@@ -165,6 +168,12 @@ func serverCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if restorePath != "" {
+				if err := restoreSnapshot(restorePath, filepath.Join(nf.dataDir, "server", "etcd"), etcdPort); err != nil {
+					return fmt.Errorf("restore %s: %w", restorePath, err)
+				}
+				klog.InfoS("restored datastore from snapshot", "path", restorePath)
+			}
 			ready := make(chan struct{})
 			errc := make(chan error, 3)
 			go func() { errc <- cp.Run(ctx, ready) }()
@@ -176,6 +185,23 @@ func serverCmd() *cobra.Command {
 			klog.InfoS("control plane ready", "elapsed", time.Since(t0), "kubeconfig", ext)
 			if err := bootstrap(ctx, cp.AdminKubeconfig); err != nil {
 				return err
+			}
+			if snapInterval > 0 {
+				go func() {
+					for {
+						select {
+						case <-ctx.Done():
+							return
+						case <-time.After(snapInterval):
+						}
+						if p, err := saveSnapshot(ctx, etcdPort, snapshotDir(nf.dataDir), "scheduled"); err != nil {
+							klog.ErrorS(err, "scheduled etcd snapshot")
+						} else {
+							klog.InfoS("etcd snapshot saved", "path", p)
+							pruneSnapshots(snapshotDir(nf.dataDir), snapRetention)
+						}
+					}
+				}()
 			}
 			disabled := map[string]bool{}
 			for _, d := range disable {
@@ -251,6 +277,9 @@ func serverCmd() *cobra.Command {
 	c.Flags().IntVar(&etcdPort, "etcd-port", 2379, "embedded etcd client port (peer uses +1)")
 	c.Flags().BoolVar(&disableAgent, "disable-agent", false, "do not run a local node")
 	c.Flags().BoolVar(&noSync, "etcd-unsafe-no-fsync", false, "benchmark knob: disable etcd fsync")
+	c.Flags().StringVar(&restorePath, "cluster-reset-restore-path", "", "restore the datastore from this etcd snapshot before starting")
+	c.Flags().DurationVar(&snapInterval, "etcd-snapshot-interval", 12*time.Hour, "automatic etcd snapshot interval (0 disables)")
+	c.Flags().IntVar(&snapRetention, "etcd-snapshot-retention", 5, "number of automatic snapshots to keep")
 	c.Flags().StringSliceVar(&disable, "disable", nil, "bundled components to skip: traefik, local-storage, metrics-server")
 	c.Flags().StringVar(&etcdSync, "etcd-sync", "barrier", "etcd WAL sync on macOS: full (F_FULLFSYNC), barrier (F_BARRIERFSYNC, crash-consistent), none")
 	c.Flags().StringSliceVar(&sans, "tls-san", nil, "extra apiserver SANs")

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024"><title>kvz</title>
+  <clipPath id="clip"><rect width="1024" height="1024" rx="228"/></clipPath><g clip-path="url(#clip)">
+  <rect width="1024" height="1024" fill="#000"/><defs>
+    <radialGradient id="fade" cx="50%" cy="50%" r="60%"><stop offset="0" stop-color="#fff"/><stop offset=".55" stop-color="#fff" stop-opacity=".7"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
+    <mask id="vig"><rect width="1024" height="1024" fill="url(#fade)"/></mask></defs>
+  <g mask="url(#vig)" fill="none" stroke="#fff">
+    <path d="M0,0V1024M32,0V1024M64,0V1024M96,0V1024M128,0V1024M160,0V1024M192,0V1024M224,0V1024M256,0V1024M288,0V1024M320,0V1024M352,0V1024M384,0V1024M416,0V1024M448,0V1024M480,0V1024M512,0V1024M544,0V1024M576,0V1024M608,0V1024M640,0V1024M672,0V1024M704,0V1024M736,0V1024M768,0V1024M800,0V1024M832,0V1024M864,0V1024M896,0V1024M928,0V1024M960,0V1024M992,0V1024M1024,0V1024M0,0H1024M0,32H1024M0,64H1024M0,96H1024M0,128H1024M0,160H1024M0,192H1024M0,224H1024M0,256H1024M0,288H1024M0,320H1024M0,352H1024M0,384H1024M0,416H1024M0,448H1024M0,480H1024M0,512H1024M0,544H1024M0,576H1024M0,608H1024M0,640H1024M0,672H1024M0,704H1024M0,736H1024M0,768H1024M0,800H1024M0,832H1024M0,864H1024M0,896H1024M0,928H1024M0,960H1024M0,992H1024M0,1024H1024" stroke-width="1" opacity=".1"/>
+    
+  </g><g transform="translate(117.48 687.07) scale(1.2329)">
+    <defs><linearGradient id="rb" gradientUnits="userSpaceOnUse" x1="28" y1="0" x2="612.00" y2="0"><stop offset="0" stop-color="#ff3b5c"/><stop offset="0.2" stop-color="#ff8a00"/><stop offset="0.4" stop-color="#ffd400"/><stop offset="0.6" stop-color="#2ee06d"/><stop offset="0.8" stop-color="#2f8cff"/><stop offset="1" stop-color="#a24bff"/></linearGradient></defs>
+    <path d="M79.2 0L28 0L28 -284L79.2 -284L79.2 -117.2L166.8 -213.6L230 -213.6L146.4 -124.8L232.8 0L175.2 0L112.8 -94.4L79.2 -58.8L79.2 0M350.4 0L289.6 0L211.6 -213.6L265.6 -213.6L320 -51.6L374.4 -213.6L428.4 -213.6L350.4 0M612 0L425.2 0L425.2 -42.4L548.8 -174L430 -174L430 -213.6L609.2 -213.6L609.2 -171.2L484.4 -39.6L612 -39.6L612 0" fill="url(#rb)"/><path d="M186.00,-213.60H234.00V-174.00H186.00Z" fill="url(#rb)"/><path d="M401.20,-213.60H435.20V-174.00H401.20Z" fill="url(#rb)"/>
+    
+  </g></g></svg>

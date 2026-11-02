@@ -80,7 +80,7 @@ func (m *Materializer) Materialize(pod *corev1.Pod, podDir string) (map[string][
 		paths[v.Name] = dst
 	}
 	out := map[string][]string{}
-	for _, c := range pod.Spec.Containers {
+	for _, c := range append(append([]corev1.Container{}, pod.Spec.InitContainers...), pod.Spec.Containers...) {
 		for _, vm := range c.VolumeMounts {
 			p, ok := paths[vm.Name]
 			if !ok {

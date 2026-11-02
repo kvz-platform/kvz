@@ -95,9 +95,20 @@ func (t *Tracker) Update(ns, name string, f func(*corev1.PodStatus)) {
 
 func now() metav1.Time { return metav1.NewTime(time.Now()) }
 
+// SidecarIDPrefix marks restartable init containers (native sidecars) in
+// their ContainerID so Recompute can tell them apart from regular init
+// containers.
+const SidecarIDPrefix = "kvz-sidecar://"
+
 // InitStatus resets the pod to Pending with waiting containers.
 func InitStatus(pod *corev1.Pod, hostIP string) {
 	t := now()
+	initialized := corev1.ConditionTrue
+	waitReason := "ContainerCreating"
+	if len(pod.Spec.InitContainers) > 0 {
+		initialized = corev1.ConditionFalse
+		waitReason = "PodInitializing"
+	}
 	pod.Status = corev1.PodStatus{
 		Phase:     corev1.PodPending,
 		HostIP:    hostIP,
@@ -105,15 +116,21 @@ func InitStatus(pod *corev1.Pod, hostIP string) {
 		StartTime: &t,
 		Conditions: []corev1.PodCondition{
 			{Type: corev1.PodScheduled, Status: corev1.ConditionTrue, LastTransitionTime: t},
-			{Type: corev1.PodInitialized, Status: corev1.ConditionTrue, LastTransitionTime: t},
+			{Type: corev1.PodInitialized, Status: initialized, LastTransitionTime: t},
 			{Type: corev1.PodReady, Status: corev1.ConditionFalse, LastTransitionTime: t},
 			{Type: corev1.ContainersReady, Status: corev1.ConditionFalse, LastTransitionTime: t},
 		},
 	}
+	for _, c := range pod.Spec.InitContainers {
+		pod.Status.InitContainerStatuses = append(pod.Status.InitContainerStatuses, corev1.ContainerStatus{
+			Name: c.Name, Image: c.Image, ImageID: c.Image,
+			State: corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "PodInitializing"}},
+		})
+	}
 	for _, c := range pod.Spec.Containers {
 		pod.Status.ContainerStatuses = append(pod.Status.ContainerStatuses, corev1.ContainerStatus{
 			Name: c.Name, Image: c.Image, ImageID: c.Image,
-			State: corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "ContainerCreating"}},
+			State: corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: waitReason}},
 		})
 	}
 }
@@ -131,13 +148,24 @@ func setCond(s *corev1.PodStatus, typ corev1.PodConditionType, v corev1.Conditio
 	s.Conditions = append(s.Conditions, corev1.PodCondition{Type: typ, Status: v, LastTransitionTime: now()})
 }
 
+// find returns the status of an app or init container.
+func find(s *corev1.PodStatus, name string) *corev1.ContainerStatus {
+	for i := range s.ContainerStatuses {
+		if s.ContainerStatuses[i].Name == name {
+			return &s.ContainerStatuses[i]
+		}
+	}
+	for i := range s.InitContainerStatuses {
+		if s.InitContainerStatuses[i].Name == name {
+			return &s.InitContainerStatuses[i]
+		}
+	}
+	return nil
+}
+
 // SetRunning marks a container running and recomputes pod phase/readiness.
 func SetRunning(s *corev1.PodStatus, container, containerID string, ready bool) {
-	for i := range s.ContainerStatuses {
-		cs := &s.ContainerStatuses[i]
-		if cs.Name != container {
-			continue
-		}
+	if cs := find(s, container); cs != nil {
 		if cs.State.Running == nil {
 			cs.State = corev1.ContainerState{Running: &corev1.ContainerStateRunning{StartedAt: now()}}
 		}
@@ -149,13 +177,17 @@ func SetRunning(s *corev1.PodStatus, container, containerID string, ready bool) 
 	Recompute(s)
 }
 
+// SetReady flips a running container's readiness (readiness probe result).
+func SetReady(s *corev1.PodStatus, container string, ready bool) {
+	if cs := find(s, container); cs != nil && cs.State.Running != nil {
+		cs.Ready = ready
+	}
+	Recompute(s)
+}
+
 // SetTerminated marks a container exited.
 func SetTerminated(s *corev1.PodStatus, container string, code int32, reason string) {
-	for i := range s.ContainerStatuses {
-		cs := &s.ContainerStatuses[i]
-		if cs.Name != container {
-			continue
-		}
+	if cs := find(s, container); cs != nil {
 		var started metav1.Time
 		if cs.State.Running != nil {
 			started = cs.State.Running.StartedAt
@@ -167,26 +199,58 @@ func SetTerminated(s *corev1.PodStatus, container string, code int32, reason str
 }
 
 func SetWaiting(s *corev1.PodStatus, container, reason, msg string) {
-	for i := range s.ContainerStatuses {
-		cs := &s.ContainerStatuses[i]
-		if cs.Name == container {
-			cs.State = corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: reason, Message: msg}}
-			cs.Ready = false
-		}
+	if cs := find(s, container); cs != nil {
+		cs.State = corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: reason, Message: msg}}
+		cs.Ready = false
 	}
 	Recompute(s)
 }
 
 func IncRestart(s *corev1.PodStatus, container string) {
-	for i := range s.ContainerStatuses {
-		if s.ContainerStatuses[i].Name == container {
-			s.ContainerStatuses[i].RestartCount++
-		}
+	if cs := find(s, container); cs != nil {
+		cs.RestartCount++
 	}
 }
 
-// Recompute derives phase + Ready conditions from container states.
+// IsInit reports whether name is an init container of the pod status.
+func IsInit(s *corev1.PodStatus, name string) bool {
+	for _, cs := range s.InitContainerStatuses {
+		if cs.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func isSidecar(cs corev1.ContainerStatus) bool {
+	return len(cs.ContainerID) >= len(SidecarIDPrefix) && cs.ContainerID[:len(SidecarIDPrefix)] == SidecarIDPrefix
+}
+
+// Recompute derives phase + Initialized/Ready conditions from container
+// states, like the kubelet: init containers (except sidecars) must all have
+// succeeded before the pod is Initialized; sidecars count toward readiness.
 func Recompute(s *corev1.PodStatus) {
+	initDone, initFailed := true, false
+	sidecars, sidecarsReady := 0, 0
+	for _, cs := range s.InitContainerStatuses {
+		switch {
+		case isSidecar(cs) && cs.State.Running != nil:
+			sidecars++
+			if cs.Ready {
+				sidecarsReady++
+			}
+		case cs.State.Terminated != nil && cs.State.Terminated.ExitCode == 0:
+		case cs.State.Terminated != nil:
+			initDone, initFailed = false, true
+		default:
+			initDone = false
+		}
+	}
+	if initDone {
+		setCond(s, corev1.PodInitialized, corev1.ConditionTrue)
+	} else {
+		setCond(s, corev1.PodInitialized, corev1.ConditionFalse)
+	}
 	all, running, ready, failed, succeeded := len(s.ContainerStatuses), 0, 0, 0, 0
 	for _, cs := range s.ContainerStatuses {
 		switch {
@@ -204,6 +268,9 @@ func Recompute(s *corev1.PodStatus) {
 		}
 	}
 	switch {
+	case initFailed && s.Phase == corev1.PodFailed:
+	case !initDone:
+		// still initializing (or an init container is being retried)
 	case all > 0 && succeeded == all:
 		s.Phase = corev1.PodSucceeded
 	case all > 0 && failed+succeeded == all && failed > 0:
@@ -214,7 +281,7 @@ func Recompute(s *corev1.PodStatus) {
 		// containers in CrashLoopBackOff keep the pod Running
 	}
 	r := corev1.ConditionFalse
-	if all > 0 && ready == all {
+	if initDone && all > 0 && ready == all && sidecarsReady == sidecars {
 		r = corev1.ConditionTrue
 	}
 	setCond(s, corev1.PodReady, r)
@@ -235,11 +302,7 @@ func Env(c corev1.Container) []string {
 // (restartPolicy Always, or OnFailure with a non-zero code): the pod stays
 // Running, the container waits in CrashLoopBackOff, lastState keeps the exit.
 func SetCrashLoop(s *corev1.PodStatus, container string, code int32, reason string) {
-	for i := range s.ContainerStatuses {
-		cs := &s.ContainerStatuses[i]
-		if cs.Name != container {
-			continue
-		}
+	if cs := find(s, container); cs != nil {
 		var started metav1.Time
 		if cs.State.Running != nil {
 			started = cs.State.Running.StartedAt

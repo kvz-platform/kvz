@@ -116,6 +116,13 @@ type cspec struct {
 	GID      int      `json:"gid"`
 	ImageTag string   `json:"image_tag"`
 	Restart  string   `json:"restart"`
+	Sidecar  bool     `json:"sidecar,omitempty"`
+
+	Readiness *probe   `json:"readiness,omitempty"`
+	Liveness  *probe   `json:"liveness,omitempty"`
+	Startup   *probe   `json:"startup,omitempty"`
+	PostStart *handler `json:"post_start,omitempty"`
+	PreStop   *handler `json:"pre_stop,omitempty"`
 }
 
 type mspec struct {
@@ -136,6 +143,8 @@ type spec struct {
 	DNS        []string `json:"dns"`
 	Hosts      string   `json:"hosts"`
 	Containers []cspec  `json:"containers"`
+	Inits      []cspec  `json:"init_containers,omitempty"`
+	Restart    string   `json:"restart"`
 	Mounts     []mspec  `json:"mounts"`
 }
 
@@ -206,10 +215,15 @@ func (b *Backend) buildSpec(p *corev1.Pod, ps *pod) (*spec, []microvm.Share, err
 	sp.Hosts = fmt.Sprintf("127.0.0.1\tlocalhost\n::1\tlocalhost\n%s\t%s\n", ps.ip, sp.Hostname)
 	shares := []microvm.Share{{Tag: "pod", Path: ps.dir}}
 	seen := map[string]bool{}
-	for _, c := range p.Spec.Containers {
+	restart := string(p.Spec.RestartPolicy)
+	if restart == "" {
+		restart = "Always"
+	}
+	sp.Restart = restart
+	build := func(c corev1.Container) (cspec, error) {
 		im, err := b.images.Get(c.Image)
 		if err != nil {
-			return nil, nil, err
+			return cspec{}, err
 		}
 		if !seen[im.Tag] {
 			shares = append(shares, microvm.Share{Tag: im.Tag, Path: im.Rootfs, ReadOnly: true})
@@ -225,7 +239,7 @@ func (b *Backend) buildSpec(p *corev1.Pod, ps *pod) (*spec, []microvm.Share, err
 		}
 		argv = append(append([]string{}, argv...), args...)
 		if len(argv) == 0 {
-			return nil, nil, fmt.Errorf("container %s: no command", c.Name)
+			return cspec{}, fmt.Errorf("container %s: no command", c.Name)
 		}
 		env := mergeEnv(im.Env, rt.Env(c))
 		cwd := im.WorkingDir
@@ -233,11 +247,29 @@ func (b *Backend) buildSpec(p *corev1.Pod, ps *pod) (*spec, []microvm.Share, err
 			cwd = c.WorkingDir
 		}
 		uid, gid := userIDs(im, c)
-		restart := string(p.Spec.RestartPolicy)
-		if restart == "" {
-			restart = "Always"
+		cs := cspec{Name: c.Name, Argv: argv, Env: env, Cwd: cwd, UID: uid, GID: gid, ImageTag: im.Tag, Restart: restart,
+			Readiness: convProbe(c, c.ReadinessProbe), Liveness: convProbe(c, c.LivenessProbe), Startup: convProbe(c, c.StartupProbe)}
+		if c.Lifecycle != nil {
+			cs.PostStart = convHandler(c, c.Lifecycle.PostStart)
+			cs.PreStop = convHandler(c, c.Lifecycle.PreStop)
 		}
-		sp.Containers = append(sp.Containers, cspec{Name: c.Name, Argv: argv, Env: env, Cwd: cwd, UID: uid, GID: gid, ImageTag: im.Tag, Restart: restart})
+		return cs, nil
+	}
+	for _, c := range p.Spec.InitContainers {
+		cs, err := build(c)
+		if err != nil {
+			return nil, nil, err
+		}
+		cs.Sidecar = c.RestartPolicy != nil && *c.RestartPolicy == corev1.ContainerRestartPolicyAlways
+		sp.Inits = append(sp.Inits, cs)
+		ps.names = append(ps.names, c.Name)
+	}
+	for _, c := range p.Spec.Containers {
+		cs, err := build(c)
+		if err != nil {
+			return nil, nil, err
+		}
+		sp.Containers = append(sp.Containers, cs)
 		ps.names = append(ps.names, c.Name)
 	}
 	// Volumes: everything materialized under the pod dir is reachable through
@@ -416,24 +448,55 @@ func (b *Backend) run(ctx context.Context, p *corev1.Pod, ps *pod) error {
 			}
 			switch e.Type {
 			case "started":
+				c, isInit, sidecar := lookupContainer(p, e.Container)
+				ready := c != nil && c.ReadinessProbe == nil && c.StartupProbe == nil && !isInit || sidecar && c.ReadinessProbe == nil && c.StartupProbe == nil
+				id := fmt.Sprintf("kvz://%s/%d", p.UID, e.Pid)
+				if sidecar {
+					id = rt.SidecarIDPrefix + fmt.Sprintf("%s/%d", p.UID, e.Pid)
+				}
 				b.t.Update(p.Namespace, p.Name, func(s *corev1.PodStatus) {
-					for _, cs := range s.ContainerStatuses {
+					for _, cs := range append(append([]corev1.ContainerStatus{}, s.ContainerStatuses...), s.InitContainerStatuses...) {
 						if cs.Name == e.Container && (cs.State.Terminated != nil || cs.State.Waiting != nil && cs.State.Waiting.Reason == "CrashLoopBackOff") {
 							rt.IncRestart(s, e.Container)
 						}
 					}
-					rt.SetRunning(s, e.Container, fmt.Sprintf("kvz://%s/%d", p.UID, e.Pid), true)
+					rt.SetRunning(s, e.Container, id, ready)
 				})
+			case "ready", "unready":
+				want := e.Type == "ready"
+				b.t.Update(p.Namespace, p.Name, func(s *corev1.PodStatus) { rt.SetReady(s, e.Container, want) })
+			case "init-failed":
+				b.t.Update(p.Namespace, p.Name, func(s *corev1.PodStatus) {
+					rt.SetTerminated(s, e.Container, int32(e.Code), "Error")
+					s.Phase = corev1.PodFailed
+					rt.Recompute(s)
+				})
+			case "probe":
+				klog.InfoS("container probe/hook", "pod", rt.Key(p.Namespace, p.Name), "container", e.Container, "msg", e.Msg)
 			case "exit":
 				code := int32(e.Code)
 				reason := "Completed"
 				if code != 0 {
 					reason = "Error"
 				}
+				_, isInit, sidecar := lookupContainer(p, e.Container)
 				b.t.Update(p.Namespace, p.Name, func(s *corev1.PodStatus) {
-					if !ps.stopping.Load() && rt.WillRestart(p.Spec.RestartPolicy, code) {
+					switch {
+					case ps.stopping.Load():
+						rt.SetTerminated(s, e.Container, code, reason)
+					case sidecar:
 						rt.SetCrashLoop(s, e.Container, code, reason)
-					} else {
+					case isInit && code == 0:
+						rt.SetTerminated(s, e.Container, code, reason)
+					case isInit:
+						if p.Spec.RestartPolicy == corev1.RestartPolicyNever {
+							rt.SetTerminated(s, e.Container, code, reason)
+						} else {
+							rt.SetCrashLoop(s, e.Container, code, reason)
+						}
+					case rt.WillRestart(p.Spec.RestartPolicy, code):
+						rt.SetCrashLoop(s, e.Container, code, reason)
+					default:
 						rt.SetTerminated(s, e.Container, code, reason)
 					}
 				})
@@ -467,7 +530,7 @@ func (b *Backend) Stop(ctx context.Context, p *corev1.Pod) error {
 		if p.Spec.TerminationGracePeriodSeconds != nil {
 			grace = time.Duration(*p.Spec.TerminationGracePeriodSeconds) * time.Second
 		}
-		if grace > 0 && vm.Send(map[string]any{"type": "kill", "signal": int(syscall.SIGTERM)}) == nil {
+		if grace > 0 && vm.Send(map[string]any{"type": "kill", "signal": int(syscall.SIGTERM), "grace": int(grace / time.Second)}) == nil {
 			// wait until all containers exited or grace expires
 			deadline := time.After(grace)
 			exited := map[string]bool{}
@@ -506,14 +569,7 @@ func (b *Backend) Stop(ctx context.Context, p *corev1.Pod) error {
 }
 
 func (b *Backend) Logs(ctx context.Context, p *corev1.Pod, container string, opts api.ContainerLogOpts) (io.ReadCloser, error) {
-	f, err := os.Open(filepath.Join(b.dir, string(p.UID), "logs", container+".log"))
-	if err != nil {
-		return nil, err
-	}
-	if !opts.Follow {
-		return f, nil
-	}
-	return rt.Follow(ctx, f), nil
+	return rt.ReadCRILog(ctx, filepath.Join(b.dir, string(p.UID), "logs", container+".log"), opts)
 }
 
 func (b *Backend) Exec(ctx context.Context, p *corev1.Pod, container string, cmd []string, attach api.AttachIO) error {
@@ -551,4 +607,19 @@ func randomMAC() net.HardwareAddr {
 	_, _ = crand.Read(m)
 	m[0] = (m[0] | 0x02) & 0xfe // locally administered, unicast
 	return net.HardwareAddr(m)
+}
+
+func lookupContainer(p *corev1.Pod, name string) (c *corev1.Container, isInit, sidecar bool) {
+	for i := range p.Spec.InitContainers {
+		if p.Spec.InitContainers[i].Name == name {
+			ic := &p.Spec.InitContainers[i]
+			return ic, true, ic.RestartPolicy != nil && *ic.RestartPolicy == corev1.ContainerRestartPolicyAlways
+		}
+	}
+	for i := range p.Spec.Containers {
+		if p.Spec.Containers[i].Name == name {
+			return &p.Spec.Containers[i], false, false
+		}
+	}
+	return nil, false, false
 }

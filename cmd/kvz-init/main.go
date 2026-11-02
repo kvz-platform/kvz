@@ -16,6 +16,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -40,8 +41,15 @@ type Container struct {
 	UID      int      `json:"uid"`
 	GID      int      `json:"gid"`
 	TTY      bool     `json:"tty"`
-	ImageTag string   `json:"image_tag"` // virtiofs tag of the image rootfs
-	Restart  string   `json:"restart"`   // Always | OnFailure | Never
+	ImageTag string   `json:"image_tag"`         // virtiofs tag of the image rootfs
+	Restart  string   `json:"restart"`           // Always | OnFailure | Never
+	Sidecar  bool     `json:"sidecar,omitempty"` // restartable init container
+
+	Readiness *Probe   `json:"readiness,omitempty"`
+	Liveness  *Probe   `json:"liveness,omitempty"`
+	Startup   *Probe   `json:"startup,omitempty"`
+	PostStart *Handler `json:"post_start,omitempty"`
+	PreStop   *Handler `json:"pre_stop,omitempty"`
 }
 
 type Spec struct {
@@ -54,6 +62,8 @@ type Spec struct {
 	DNS        []string    `json:"dns"`
 	Hosts      string      `json:"hosts"`
 	Containers []Container `json:"containers"`
+	Inits      []Container `json:"init_containers,omitempty"`
+	Restart    string      `json:"restart"` // pod restartPolicy
 	Mounts     []Mount     `json:"mounts"`
 }
 
@@ -161,13 +171,14 @@ func main() {
 	if spec.Hostname != "" {
 		_ = unix.Sethostname([]byte(spec.Hostname))
 	}
+	podIP = spec.IP
 	netDone := make(chan error, 1)
 	go func() { netDone <- setupNetwork(spec.IP, spec.Mask, spec.GW, spec.MTU) }()
 
 	// Per image: one read-only virtiofs lower; per container: overlay root.
 	roots := map[string]string{}
 	must(mount("tmpfs", "/rw", "tmpfs", 0, "mode=755"), "mount /rw")
-	for _, c := range spec.Containers {
+	for _, c := range append(append([]Container{}, spec.Inits...), spec.Containers...) {
 		specByName[c.Name] = c
 		lower := "/v/" + c.ImageTag
 		roots[lower] = lower
@@ -224,10 +235,15 @@ func main() {
 	}
 	emit(Event{Type: "hello", BootMs: t0, ReadyMs: bootMs()})
 
-	// Start every container.
-	for _, c := range spec.Containers {
-		startContainer(c)
-	}
+	// Init containers (sequential; sidecars keep running), then app containers.
+	go func() {
+		if !runInitContainers(spec.Inits, spec.Restart) {
+			return
+		}
+		for _, c := range spec.Containers {
+			startContainer(c)
+		}
+	}()
 
 	// Host commands (kill, exec) arrive on the same connection.
 	if conn != nil {
@@ -259,8 +275,21 @@ func main() {
 			w <- code
 		}
 		if ok {
+			stopMu.Lock()
+			if cancel, ok := probeStop[name]; ok {
+				cancel()
+				delete(probeStop, name)
+			}
+			stopMu.Unlock()
 			emit(Event{Type: "exit", Container: name, Code: code})
-			maybeRestart(name, code)
+			exitMu.Lock()
+			ch, isInit := exitChans[name]
+			exitMu.Unlock()
+			if isInit {
+				ch <- code // the init sequence decides about retries
+			} else {
+				maybeRestart(name, code)
+			}
 		}
 	}
 }
@@ -293,10 +322,10 @@ type Command struct {
 	Type      string `json:"type"`
 	Container string `json:"container"`
 	Signal    int    `json:"signal"`
+	Grace     int    `json:"grace"`
 }
 
 func commands(conn *os.File) {
-	mu := &pmu
 	sc := bufio.NewScanner(conn)
 	for sc.Scan() {
 		var c Command
@@ -306,14 +335,21 @@ func commands(conn *os.File) {
 		switch c.Type {
 		case "kill":
 			stopping.Store(true)
-			mu.Lock()
-			for pid, name := range pids {
-				if c.Container == "" || c.Container == name {
-					_ = unix.Kill(-pid, syscall.Signal(c.Signal))
-					_ = unix.Kill(pid, syscall.Signal(c.Signal))
-				}
+			if c.Container != "" {
+				signalWhere(func(n string) bool { return n == c.Container }, syscall.Signal(c.Signal))
+				continue
 			}
-			mu.Unlock()
+			// Kubernetes order: preStop hooks, then main containers, and only
+			// once they have exited the sidecars (restartable init containers).
+			grace := time.Duration(max(c.Grace, 1)) * time.Second
+			deadline := time.Now().Add(grace)
+			preStopAll(grace)
+			isSidecar := func(n string) bool { return specByName[n].Sidecar }
+			signalWhere(func(n string) bool { return !isSidecar(n) }, syscall.Signal(c.Signal))
+			for time.Now().Before(deadline) && countWhere(func(n string) bool { return !isSidecar(n) }) > 0 {
+				time.Sleep(10 * time.Millisecond)
+			}
+			signalWhere(isSidecar, syscall.Signal(c.Signal))
 		case "poweroff":
 			unix.Sync()
 			_ = unix.Reboot(unix.LINUX_REBOOT_CMD_POWER_OFF)
@@ -322,38 +358,96 @@ func commands(conn *os.File) {
 	_ = strconv.Itoa
 }
 
+func signalWhere(match func(string) bool, sig syscall.Signal) {
+	pmu.Lock()
+	defer pmu.Unlock()
+	for pid, name := range pids {
+		if match(name) {
+			_ = unix.Kill(-pid, sig)
+			_ = unix.Kill(pid, sig)
+		}
+	}
+}
+
+func countWhere(match func(string) bool) int {
+	pmu.Lock()
+	defer pmu.Unlock()
+	n := 0
+	for _, name := range pids {
+		if match(name) {
+			n++
+		}
+	}
+	return n
+}
+
 var (
 	stopping atomic.Bool
 	backoff  = map[string]time.Duration{}
 	boMu     sync.Mutex
 )
 
-func startContainer(c Container) {
-	logf, err := os.OpenFile("/kvz/logs/"+c.Name+".log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
-	if err != nil {
-		_ = os.MkdirAll("/kvz/logs", 0o755)
-		logf, _ = os.OpenFile("/kvz/logs/"+c.Name+".log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
-	}
-	defer logf.Close() // the child keeps its own descriptors
+func startContainer(c Container) { startContainerOpts(c, false) }
+
+func startContainerOpts(c Container, restart bool) {
+	logf := openLog(c.Name, restart)
 	root := "/c/" + c.Name
 	argv0 := resolve(root, c.Argv[0], c.Env)
-	cmd := &exec.Cmd{Path: argv0, Args: c.Argv, Env: c.Env, Dir: c.Cwd, Stdout: logf, Stderr: logf,
+	or, ow, _ := os.Pipe()
+	er, ew, _ := os.Pipe()
+	cmd := &exec.Cmd{Path: argv0, Args: c.Argv, Env: c.Env, Dir: c.Cwd, Stdout: ow, Stderr: ew,
 		SysProcAttr: &syscall.SysProcAttr{Chroot: root, Setsid: true,
 			Credential: &syscall.Credential{Uid: uint32(c.UID), Gid: uint32(c.GID)}}}
 	if cmd.Dir == "" {
 		cmd.Dir = "/"
 	}
 	pmu.Lock()
-	if err := cmd.Start(); err != nil {
-		pmu.Unlock()
-		fmt.Fprintf(logf, "kvz-init: start %s: %v\n", c.Name, err)
+	err := cmd.Start()
+	if err == nil {
+		pids[cmd.Process.Pid] = c.Name
+	}
+	pmu.Unlock()
+	ow.Close()
+	ew.Close()
+	if err != nil {
+		or.Close()
+		er.Close()
+		fmt.Fprintf(logf, "%s stderr F kvz-init: start %s: %v\n", time.Now().UTC().Format(time.RFC3339Nano), c.Name, err)
+		logf.Close()
 		emit(Event{Type: "exit", Container: c.Name, Code: 127, Msg: err.Error()})
-		go maybeRestart(c.Name, 127)
+		exitMu.Lock()
+		ch, isInit := exitChans[c.Name]
+		exitMu.Unlock()
+		if isInit {
+			ch <- 127
+		} else {
+			go maybeRestart(c.Name, 127)
+		}
 		return
 	}
-	pids[cmd.Process.Pid] = c.Name
-	pmu.Unlock()
-	emit(Event{Type: "started", Container: c.Name, Pid: cmd.Process.Pid, ReadyMs: bootMs()})
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go pipeLines(or, logf, "stdout", &wg)
+	go pipeLines(er, logf, "stderr", &wg)
+	go func() { wg.Wait(); logf.Close() }()
+	pid := cmd.Process.Pid
+	emit(Event{Type: "started", Container: c.Name, Pid: pid, ReadyMs: bootMs()})
+	ctx, cancel := context.WithCancel(context.Background())
+	stopMu.Lock()
+	probeStop[c.Name] = cancel
+	stopMu.Unlock()
+	if c.PostStart != nil {
+		go func() {
+			if err := runHandler(c, c.PostStart, 30*time.Second); err != nil {
+				emit(Event{Type: "probe", Container: c.Name, Msg: "postStart hook failed: " + err.Error()})
+				killInstance(pid)
+				return
+			}
+			runProbes(ctx, c, pid)
+		}()
+	} else if c.Readiness != nil || c.Liveness != nil || c.Startup != nil || c.Sidecar {
+		go runProbes(ctx, c, pid)
+	}
 }
 
 // maybeRestart implements the pod restartPolicy with kubelet-style
@@ -366,10 +460,12 @@ func maybeRestart(name string, code int) {
 	if !ok {
 		return
 	}
-	switch c.Restart {
-	case "Never":
+	switch {
+	case c.Sidecar:
+		// sidecars always restart
+	case c.Restart == "Never":
 		return
-	case "OnFailure":
+	case c.Restart == "OnFailure":
 		if code == 0 {
 			return
 		}
@@ -386,7 +482,7 @@ func maybeRestart(name string, code int) {
 	go func() {
 		time.Sleep(d)
 		if !stopping.Load() {
-			startContainer(c)
+			startContainerOpts(c, true) // rotates the log for `kubectl logs --previous`
 		}
 	}()
 }

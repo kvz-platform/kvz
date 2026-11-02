@@ -111,6 +111,7 @@ type cspec struct {
 	UID      int      `json:"uid"`
 	GID      int      `json:"gid"`
 	ImageTag string   `json:"image_tag"`
+	Restart  string   `json:"restart"`
 }
 
 type mspec struct {
@@ -200,7 +201,11 @@ func (b *Backend) buildSpec(p *corev1.Pod, ps *pod) (*spec, []microvm.Share, err
 			cwd = c.WorkingDir
 		}
 		uid, gid := userIDs(im, c)
-		sp.Containers = append(sp.Containers, cspec{Name: c.Name, Argv: argv, Env: env, Cwd: cwd, UID: uid, GID: gid, ImageTag: im.Tag})
+		restart := string(p.Spec.RestartPolicy)
+		if restart == "" {
+			restart = "Always"
+		}
+		sp.Containers = append(sp.Containers, cspec{Name: c.Name, Argv: argv, Env: env, Cwd: cwd, UID: uid, GID: gid, ImageTag: im.Tag, Restart: restart})
 		ps.names = append(ps.names, c.Name)
 	}
 	// Volumes: everything materialized under the pod dir is reachable through
@@ -364,6 +369,11 @@ func (b *Backend) run(ctx context.Context, p *corev1.Pod, ps *pod) error {
 			switch e.Type {
 			case "started":
 				b.t.Update(p.Namespace, p.Name, func(s *corev1.PodStatus) {
+					for _, cs := range s.ContainerStatuses {
+						if cs.Name == e.Container && (cs.State.Terminated != nil || cs.State.Waiting != nil && cs.State.Waiting.Reason == "CrashLoopBackOff") {
+							rt.IncRestart(s, e.Container)
+						}
+					}
 					rt.SetRunning(s, e.Container, fmt.Sprintf("kvz://%s/%d", p.UID, e.Pid), true)
 				})
 			case "exit":
@@ -372,7 +382,13 @@ func (b *Backend) run(ctx context.Context, p *corev1.Pod, ps *pod) error {
 				if code != 0 {
 					reason = "Error"
 				}
-				b.t.Update(p.Namespace, p.Name, func(s *corev1.PodStatus) { rt.SetTerminated(s, e.Container, code, reason) })
+				b.t.Update(p.Namespace, p.Name, func(s *corev1.PodStatus) {
+					if rt.WillRestart(p.Spec.RestartPolicy, code) {
+						rt.SetCrashLoop(s, e.Container, code, reason)
+					} else {
+						rt.SetTerminated(s, e.Container, code, reason)
+					}
+				})
 			case "error":
 				klog.InfoS("kvz-init error", "pod", rt.Key(p.Namespace, p.Name), "msg", e.Msg)
 			}

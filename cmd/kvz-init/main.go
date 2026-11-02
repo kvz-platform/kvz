@@ -25,6 +25,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -40,6 +41,7 @@ type Container struct {
 	GID      int      `json:"gid"`
 	TTY      bool     `json:"tty"`
 	ImageTag string   `json:"image_tag"` // virtiofs tag of the image rootfs
+	Restart  string   `json:"restart"`   // Always | OnFailure | Never
 }
 
 type Spec struct {
@@ -214,30 +216,7 @@ func main() {
 
 	// Start every container.
 	for _, c := range spec.Containers {
-		c := c
-		logf, err := os.OpenFile("/kvz/logs/"+c.Name+".log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
-		if err != nil {
-			_ = os.MkdirAll("/kvz/logs", 0o755)
-			logf, _ = os.OpenFile("/kvz/logs/"+c.Name+".log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
-		}
-		root := "/c/" + c.Name
-		argv0 := resolve(root, c.Argv[0], c.Env)
-		cmd := &exec.Cmd{Path: argv0, Args: c.Argv, Env: c.Env, Dir: c.Cwd, Stdout: logf, Stderr: logf,
-			SysProcAttr: &syscall.SysProcAttr{Chroot: root, Setsid: true,
-				Credential: &syscall.Credential{Uid: uint32(c.UID), Gid: uint32(c.GID)}}}
-		if cmd.Dir == "" {
-			cmd.Dir = "/"
-		}
-		pmu.Lock()
-		if err := cmd.Start(); err != nil {
-			pmu.Unlock()
-			fmt.Fprintf(logf, "kvz-init: start %s: %v\n", c.Name, err)
-			emit(Event{Type: "exit", Container: c.Name, Code: 127, Msg: err.Error()})
-			continue
-		}
-		pids[cmd.Process.Pid] = c.Name
-		pmu.Unlock()
-		emit(Event{Type: "started", Container: c.Name, Pid: cmd.Process.Pid, ReadyMs: bootMs()})
+		startContainer(c)
 	}
 
 	// Host commands (kill, exec) arrive on the same connection.
@@ -270,11 +249,8 @@ func main() {
 			w <- code
 		}
 		if ok {
-			code := ws.ExitStatus()
-			if ws.Signaled() {
-				code = 128 + int(ws.Signal())
-			}
 			emit(Event{Type: "exit", Container: name, Code: code})
+			maybeRestart(name, code)
 		}
 	}
 }
@@ -319,6 +295,7 @@ func commands(conn *os.File) {
 		}
 		switch c.Type {
 		case "kill":
+			stopping.Store(true)
 			mu.Lock()
 			for pid, name := range pids {
 				if c.Container == "" || c.Container == name {
@@ -333,4 +310,73 @@ func commands(conn *os.File) {
 		}
 	}
 	_ = strconv.Itoa
+}
+
+var (
+	stopping atomic.Bool
+	backoff  = map[string]time.Duration{}
+	boMu     sync.Mutex
+)
+
+func startContainer(c Container) {
+	logf, err := os.OpenFile("/kvz/logs/"+c.Name+".log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		_ = os.MkdirAll("/kvz/logs", 0o755)
+		logf, _ = os.OpenFile("/kvz/logs/"+c.Name+".log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	}
+	defer logf.Close() // the child keeps its own descriptors
+	root := "/c/" + c.Name
+	argv0 := resolve(root, c.Argv[0], c.Env)
+	cmd := &exec.Cmd{Path: argv0, Args: c.Argv, Env: c.Env, Dir: c.Cwd, Stdout: logf, Stderr: logf,
+		SysProcAttr: &syscall.SysProcAttr{Chroot: root, Setsid: true,
+			Credential: &syscall.Credential{Uid: uint32(c.UID), Gid: uint32(c.GID)}}}
+	if cmd.Dir == "" {
+		cmd.Dir = "/"
+	}
+	pmu.Lock()
+	if err := cmd.Start(); err != nil {
+		pmu.Unlock()
+		fmt.Fprintf(logf, "kvz-init: start %s: %v\n", c.Name, err)
+		emit(Event{Type: "exit", Container: c.Name, Code: 127, Msg: err.Error()})
+		go maybeRestart(c.Name, 127)
+		return
+	}
+	pids[cmd.Process.Pid] = c.Name
+	pmu.Unlock()
+	emit(Event{Type: "started", Container: c.Name, Pid: cmd.Process.Pid, ReadyMs: bootMs()})
+}
+
+// maybeRestart implements the pod restartPolicy with kubelet-style
+// exponential backoff (1s, 2s, 4s ... capped at 60s; reset after 60s up).
+func maybeRestart(name string, code int) {
+	if stopping.Load() {
+		return
+	}
+	c, ok := specByName[name]
+	if !ok {
+		return
+	}
+	switch c.Restart {
+	case "Never":
+		return
+	case "OnFailure":
+		if code == 0 {
+			return
+		}
+	}
+	boMu.Lock()
+	d := backoff[name]
+	if d == 0 {
+		d = time.Second
+	} else if d < 60*time.Second {
+		d *= 2
+	}
+	backoff[name] = d
+	boMu.Unlock()
+	go func() {
+		time.Sleep(d)
+		if !stopping.Load() {
+			startContainer(c)
+		}
+	}()
 }

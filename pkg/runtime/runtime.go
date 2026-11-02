@@ -4,6 +4,7 @@ package runtime
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"sync"
 	"time"
@@ -209,6 +210,8 @@ func Recompute(s *corev1.PodStatus) {
 		s.Phase = corev1.PodFailed
 	case running > 0:
 		s.Phase = corev1.PodRunning
+	case s.Phase == corev1.PodRunning:
+		// containers in CrashLoopBackOff keep the pod Running
 	}
 	r := corev1.ConditionFalse
 	if all > 0 && ready == all {
@@ -226,4 +229,35 @@ func Env(c corev1.Container) []string {
 		out = append(out, e.Name+"="+e.Value)
 	}
 	return out
+}
+
+// SetCrashLoop records an exit of a container that will be restarted
+// (restartPolicy Always, or OnFailure with a non-zero code): the pod stays
+// Running, the container waits in CrashLoopBackOff, lastState keeps the exit.
+func SetCrashLoop(s *corev1.PodStatus, container string, code int32, reason string) {
+	for i := range s.ContainerStatuses {
+		cs := &s.ContainerStatuses[i]
+		if cs.Name != container {
+			continue
+		}
+		var started metav1.Time
+		if cs.State.Running != nil {
+			started = cs.State.Running.StartedAt
+		}
+		cs.LastTerminationState = corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{ExitCode: code, Reason: reason, StartedAt: started, FinishedAt: now()}}
+		cs.State = corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "CrashLoopBackOff", Message: fmt.Sprintf("back-off restarting failed container %s", container)}}
+		cs.Ready = false
+	}
+	Recompute(s)
+}
+
+// WillRestart reports whether restartPolicy restarts a container that exited with code.
+func WillRestart(policy corev1.RestartPolicy, code int32) bool {
+	switch policy {
+	case corev1.RestartPolicyNever:
+		return false
+	case corev1.RestartPolicyOnFailure:
+		return code != 0
+	}
+	return true
 }

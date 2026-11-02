@@ -61,6 +61,7 @@ type Container struct {
 
 type Spec struct {
 	Search     []string          `json:"search"`
+	CPUOnline  string            `json:"cpu_online,omitempty"`
 	MTU        int               `json:"mtu"`
 	IP         string            `json:"ip"`
 	Mask       int               `json:"mask"`
@@ -186,6 +187,21 @@ func main() {
 		_ = unix.Sethostname([]byte(spec.Hostname))
 	}
 	podIP = spec.IP
+	// The kernel booted with maxcpus=1: bring the other vCPUs online in
+	// parallel with rootfs and network setup ("before") or once containers
+	// run ("after"), keeping SMP bring-up off the boot critical path.
+	cpusDone := make(chan struct{})
+	if spec.CPUOnline == "" {
+		close(cpusDone)
+	} else {
+		go func() {
+			if spec.CPUOnline == "after" {
+				<-containersStarted
+			}
+			onlineCPUs()
+			close(cpusDone)
+		}()
+	}
 	netDone := make(chan error, 1)
 	go func() { netDone <- setupNetwork(spec.IP, spec.Mask, spec.GW, spec.MTU) }()
 
@@ -276,6 +292,9 @@ func main() {
 		}
 	}
 	must(<-netDone, "network")
+	if spec.CPUOnline == "before" {
+		<-cpusDone // containers size thread pools from the CPU count at start
+	}
 	for k, v := range spec.Sysctls {
 		p := "/proc/sys/" + strings.ReplaceAll(k, ".", "/")
 		if err := os.WriteFile(p, []byte(v), 0o644); err != nil {
@@ -296,6 +315,7 @@ func main() {
 		for _, c := range spec.Containers {
 			startContainer(c)
 		}
+		close(containersStarted)
 	}()
 
 	// Host commands (kill, exec) arrive on the same connection.
@@ -660,4 +680,20 @@ func terminationMessage(name string, code int) string {
 		return msg
 	}
 	return string(b)
+}
+
+// containersStarted is closed once the app containers have been started.
+var containersStarted = make(chan struct{})
+
+func onlineCPUs() {
+	_ = os.MkdirAll("/sys", 0o755)
+	_ = unix.Mount("sysfs", "/sys", "sysfs", 0, "")
+	entries, _ := os.ReadDir("/sys/devices/system/cpu")
+	for _, e := range entries {
+		n := e.Name()
+		if !strings.HasPrefix(n, "cpu") || n == "cpu0" || strings.TrimLeft(n[3:], "0123456789") != "" || len(n) == 3 {
+			continue
+		}
+		_ = os.WriteFile("/sys/devices/system/cpu/"+n+"/online", []byte("1"), 0o644)
+	}
 }

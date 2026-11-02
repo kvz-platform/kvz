@@ -69,6 +69,7 @@ type launch struct {
 	Groups          []uint32
 	Caps            uint64
 	NoNewPrivs      bool
+	Cgroup          string // cgroup to join before exec
 }
 
 // containerCmd returns a command that starts argv as a process of container
@@ -91,6 +92,10 @@ func containerCmd(c Container, argv []string) (*exec.Cmd, error) {
 	}
 	l := launch{Root: root, Dir: dir, Path: path, Argv: argv, Env: c.Env, UID: c.UID, GID: c.GID,
 		Groups: groups(c, root), Caps: capMask(c), NoNewPrivs: c.NoNewPrivs && !c.Privileged}
+	if cgroupsOn {
+		l.Cgroup = cgPath(c.Name)
+		_ = os.MkdirAll(l.Cgroup, 0o755)
+	}
 	b, err := json.Marshal(l)
 	if err != nil {
 		return nil, err
@@ -110,6 +115,9 @@ func trampoline() {
 	}
 	if err := json.Unmarshal([]byte(os.Getenv("KVZ_LAUNCH")), &l); err != nil {
 		fail("launch spec", err)
+	}
+	if l.Cgroup != "" { // join the container's cgroup (limits apply from exec on)
+		_ = os.WriteFile(l.Cgroup+"/cgroup.procs", []byte("0"), 0o644)
 	}
 	if err := unix.Chroot(l.Root); err != nil {
 		fail("chroot", err)

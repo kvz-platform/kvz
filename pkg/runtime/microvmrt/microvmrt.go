@@ -44,6 +44,7 @@ type Backend struct {
 	dir           string
 	kernel        string
 	kernelHotplug bool // pod kernel can online CPUs at runtime
+	kernelCgroups bool // pod kernel enforces per-container cgroup limits
 	initrd        string
 	t             *rt.Tracker
 	vols          *volumes.Materializer
@@ -71,6 +72,9 @@ type pod struct {
 	done      chan struct{}
 	names     []string
 	latest    atomic.Pointer[corev1.Pod] // newest pod object from UpdatePod
+	first     *corev1.Pod                // pod as started (resources applied at boot)
+	resMu     sync.Mutex
+	applied   map[string]corev1.ResourceRequirements // container resources in effect
 	ns        string
 	refresh   chan struct{} // re-render configMap/secret/downwardAPI volumes
 }
@@ -125,7 +129,7 @@ func New(dataDir, hostIP string, t *rt.Tracker, vols *volumes.Materializer, pn *
 		return nil, err
 	}
 	kernel := DefaultKernel()
-	return &Backend{hostIP: hostIP, dir: filepath.Join(dataDir, "mvm"), kernel: kernel, kernelHotplug: kernelHasHotplug(kernel), initrd: initrd, t: t, vols: vols,
+	return &Backend{hostIP: hostIP, dir: filepath.Join(dataDir, "mvm"), kernel: kernel, kernelHotplug: kernelHasHotplug(kernel), kernelCgroups: kernelHas(kernel, "CONFIG_CFS_BANDWIDTH", "CONFIG_MEMCG"), initrd: initrd, t: t, vols: vols,
 		images: store, pnet: pn, dns: []string{"10.43.0.10"},
 		pods: map[string]*pod{}, pre: map[string]net.IP{}, slots: make(chan struct{}, maxVMs)}, nil
 }
@@ -140,6 +144,9 @@ func (b *Backend) UpdatePod(p *corev1.Pod) {
 	b.mu.Unlock()
 	if ps != nil {
 		ps.latest.Store(p.DeepCopy())
+		if b.kernelCgroups {
+			b.resize(p, ps)
+		}
 		ps.nudge() // labels/annotations feed downwardAPI volumes
 	}
 }
@@ -169,23 +176,24 @@ func (b *Backend) RefreshVolumes(ns string) {
 func (b *Backend) Images() *image.Store { return b.images }
 
 type cspec struct {
-	Name       string   `json:"name"`
-	Argv       []string `json:"argv"`
-	Env        []string `json:"env"`
-	Cwd        string   `json:"cwd"`
-	UID        int      `json:"uid"`
-	GID        int      `json:"gid"`
-	ImageTag   string   `json:"image_tag"`
-	Restart    string   `json:"restart"`
-	Sidecar    bool     `json:"sidecar,omitempty"`
-	Groups     []int    `json:"groups,omitempty"`
-	ReadOnly   bool     `json:"ro_root,omitempty"`
-	TermPath   string   `json:"term_path,omitempty"`
-	TermLogs   bool     `json:"term_fallback_logs,omitempty"`
-	Privileged bool     `json:"privileged,omitempty"`
-	CapAdd     []string `json:"cap_add,omitempty"`
-	CapDrop    []string `json:"cap_drop,omitempty"`
-	NoNewPrivs bool     `json:"no_new_privs,omitempty"`
+	Name       string      `json:"name"`
+	Argv       []string    `json:"argv"`
+	Env        []string    `json:"env"`
+	Cwd        string      `json:"cwd"`
+	UID        int         `json:"uid"`
+	GID        int         `json:"gid"`
+	ImageTag   string      `json:"image_tag"`
+	Restart    string      `json:"restart"`
+	Cgroup     *cgroupSpec `json:"cgroup,omitempty"`
+	Sidecar    bool        `json:"sidecar,omitempty"`
+	Groups     []int       `json:"groups,omitempty"`
+	ReadOnly   bool        `json:"ro_root,omitempty"`
+	TermPath   string      `json:"term_path,omitempty"`
+	TermLogs   bool        `json:"term_fallback_logs,omitempty"`
+	Privileged bool        `json:"privileged,omitempty"`
+	CapAdd     []string    `json:"cap_add,omitempty"`
+	CapDrop    []string    `json:"cap_drop,omitempty"`
+	NoNewPrivs bool        `json:"no_new_privs,omitempty"`
 
 	Readiness *probe   `json:"readiness,omitempty"`
 	Liveness  *probe   `json:"liveness,omitempty"`
@@ -255,7 +263,7 @@ func (b *Backend) Start(ctx context.Context, p *corev1.Pod) error {
 	dir := filepath.Join(b.dir, string(p.UID))
 	_ = os.MkdirAll(filepath.Join(dir, "logs"), 0o755)
 	pctx, cancel := context.WithCancel(context.Background())
-	ps := &pod{ip: ip, dir: dir, cancel: cancel, done: make(chan struct{}), ns: p.Namespace, refresh: make(chan struct{}, 1)}
+	ps := &pod{ip: ip, dir: dir, cancel: cancel, done: make(chan struct{}), ns: p.Namespace, refresh: make(chan struct{}, 1), first: p.DeepCopy()}
 	b.mu.Lock()
 	b.pods[key] = ps
 	b.mu.Unlock()
@@ -362,7 +370,7 @@ func (b *Backend) buildSpec(p *corev1.Pod, ps *pod) (*spec, []microvm.Share, err
 		if termPath == "" {
 			termPath = "/dev/termination-log"
 		}
-		cs := cspec{Name: c.Name, Argv: argv, Env: env, Cwd: cwd, UID: uid, GID: gid, ImageTag: im.Tag, Restart: restart,
+		cs := cspec{Name: c.Name, Argv: argv, Env: env, Cwd: cwd, UID: uid, GID: gid, ImageTag: im.Tag, Restart: restart, Cgroup: cgroupFor(c.Resources),
 			Groups: groups, ReadOnly: c.SecurityContext != nil && c.SecurityContext.ReadOnlyRootFilesystem != nil && *c.SecurityContext.ReadOnlyRootFilesystem,
 			TermPath: termPath, TermLogs: c.TerminationMessagePolicy == corev1.TerminationMessageFallbackToLogsOnError,
 			Readiness: convProbe(c, c.ReadinessProbe), Liveness: convProbe(c, c.LivenessProbe), Startup: convProbe(c, c.StartupProbe)}
@@ -553,6 +561,19 @@ var defaultMemMB = func() uint64 {
 // kernelHasHotplug reports whether the pod kernel can online CPUs at runtime
 // (kernel/build.sh installs its .config next to the Image). Without it,
 // maxcpus=1 would leave pods on one CPU, so the kernel boots them all.
+func kernelHas(kernel string, opts ...string) bool {
+	b, err := os.ReadFile(filepath.Join(filepath.Dir(kernel), "config"))
+	if err != nil {
+		return false
+	}
+	for _, o := range opts {
+		if !strings.Contains(string(b), "\n"+o+"=y\n") {
+			return false
+		}
+	}
+	return true
+}
+
 func kernelHasHotplug(kernel string) bool {
 	b, err := os.ReadFile(filepath.Join(filepath.Dir(kernel), "config"))
 	return err == nil && strings.Contains(string(b), "\nCONFIG_HOTPLUG_CPU=y\n")
@@ -643,6 +664,14 @@ func (b *Backend) run(ctx context.Context, p *corev1.Pod, ps *pod) error {
 	// SMP bring-up of many vCPUs in every booting guest is costly when pods
 	// start in bulk; boot on one CPU and let kvz-init online the rest.
 	ncpu, extraArgs := vcpus(p), ""
+	mem := memMB(p)
+	if b.kernelCgroups {
+		// limits are enforced per container by cgroups: the VM gets every
+		// vCPU (cpu.max does the limiting, like a cgroup quota on a node) and
+		// memory headroom so in-place resizes up fit
+		ncpu = defaultVCPUs
+		mem = max(mem+256, defaultMemMB)
+	}
 	if ncpu > 1 && cpuOnlineMode != "boot" && b.kernelHotplug {
 		sp.CPUOnline = cpuOnlineMode
 		extraArgs = "maxcpus=1"
@@ -657,7 +686,7 @@ func (b *Backend) run(ctx context.Context, p *corev1.Pod, ps *pod) error {
 		return err
 	}
 	vm, err := microvm.Boot(microvm.Config{Kernel: b.kernel, Initrd: b.initrd, IP: ps.ip, GW: b.pnet.GW, Mask: b.pnet.Bits(),
-		CPUs: ncpu, MemoryMB: memMB(p), ExtraArgs: extraArgs, Shares: shares, ConsoleLog: consoleLog(ps.dir), NetFile: nic, MTU: b.pnet.MTU, MAC: mac})
+		CPUs: ncpu, MemoryMB: mem, ExtraArgs: extraArgs, Shares: shares, ConsoleLog: consoleLog(ps.dir), NetFile: nic, MTU: b.pnet.MTU, MAC: mac})
 	if err != nil {
 		nic.Close()
 		return err
@@ -717,6 +746,9 @@ func (b *Backend) run(ctx context.Context, p *corev1.Pod, ps *pod) error {
 						}
 					}
 					rt.SetRunning(s, e.Container, id, ready)
+					if c != nil {
+						setResources(s, e.Container, c.Resources)
+					}
 				})
 			case "ready", "unready":
 				want := e.Type == "ready"
@@ -739,6 +771,9 @@ func (b *Backend) run(ctx context.Context, p *corev1.Pod, ps *pod) error {
 				reason := "Completed"
 				if code != 0 {
 					reason = "Error"
+				}
+				if e.Reason != "" {
+					reason = e.Reason // OOMKilled
 				}
 				_, isInit, sidecar := lookupContainer(p, e.Container)
 				b.t.Update(p.Namespace, p.Name, func(s *corev1.PodStatus) {

@@ -39,6 +39,7 @@ import (
 var initBin []byte
 
 type Backend struct {
+	hostIP string
 	dir    string
 	kernel string
 	initrd string
@@ -58,13 +59,15 @@ type Backend struct {
 }
 
 type pod struct {
-	stopping atomic.Bool // set by Stop: exits are final, never CrashLoopBackOff
-	vm       *microvm.VM
-	ip       net.IP
-	dir      string
-	cancel   context.CancelFunc
-	done     chan struct{}
-	names    []string
+	images    map[string]*image.Image // container image ref -> resolved image
+	listeners []net.Listener          // hostPort / hostNetwork forwards
+	stopping  atomic.Bool             // set by Stop: exits are final, never CrashLoopBackOff
+	vm        *microvm.VM
+	ip        net.IP
+	dir       string
+	cancel    context.CancelFunc
+	done      chan struct{}
+	names     []string
 }
 
 func DefaultKernel() string {
@@ -87,7 +90,7 @@ func consoleLog(dir string) string {
 
 func exists(p string) bool { _, err := os.Stat(p); return err == nil }
 
-func New(dataDir string, t *rt.Tracker, vols *volumes.Materializer, pn *podnet.Net) (*Backend, error) {
+func New(dataDir, hostIP string, t *rt.Tracker, vols *volumes.Materializer, pn *podnet.Net) (*Backend, error) {
 	home, _ := os.UserHomeDir()
 	initrd, err := microvm.InitrdPath(filepath.Join(dataDir, "microvm"), initBin)
 	if err != nil {
@@ -97,7 +100,7 @@ func New(dataDir string, t *rt.Tracker, vols *volumes.Materializer, pn *podnet.N
 	if v, err := strconv.Atoi(os.Getenv("KVZ_MAX_VMS")); err == nil && v > 0 {
 		maxVMs = v
 	}
-	return &Backend{dir: filepath.Join(dataDir, "mvm"), kernel: DefaultKernel(), initrd: initrd, t: t, vols: vols,
+	return &Backend{hostIP: hostIP, dir: filepath.Join(dataDir, "mvm"), kernel: DefaultKernel(), initrd: initrd, t: t, vols: vols,
 		images: image.NewStore(filepath.Join(home, ".kvz", "images")), pnet: pn, dns: []string{pn.GW.String()},
 		pods: map[string]*pod{}, pre: map[string]net.IP{}, slots: make(chan struct{}, maxVMs)}, nil
 }
@@ -186,10 +189,15 @@ func (b *Backend) Start(ctx context.Context, p *corev1.Pod) error {
 	b.mu.Lock()
 	b.pods[key] = ps
 	b.mu.Unlock()
-	// Publish the IP immediately: it is fixed before boot.
+	// Publish the IP immediately: it is fixed before boot. hostNetwork pods
+	// report the node IP (their ports are forwarded from the host).
+	statusIP := ip.String()
+	if p.Spec.HostNetwork {
+		statusIP = b.hostIP
+	}
 	b.t.Update(p.Namespace, p.Name, func(s *corev1.PodStatus) {
-		s.PodIP = ip.String()
-		s.PodIPs = []corev1.PodIP{{IP: ip.String()}}
+		s.PodIP = statusIP
+		s.PodIPs = []corev1.PodIP{{IP: statusIP}}
 	})
 	go func() {
 		defer close(ps.done)
@@ -221,9 +229,9 @@ func (b *Backend) buildSpec(p *corev1.Pod, ps *pod) (*spec, []microvm.Share, err
 	}
 	sp.Restart = restart
 	build := func(c corev1.Container) (cspec, error) {
-		im, err := b.images.Get(c.Image)
-		if err != nil {
-			return cspec{}, err
+		im := ps.images[c.Image]
+		if im == nil {
+			return cspec{}, fmt.Errorf("image %s not resolved", c.Image)
 		}
 		if !seen[im.Tag] {
 			shares = append(shares, microvm.Share{Tag: im.Tag, Path: im.Rootfs, ReadOnly: true})
@@ -406,6 +414,9 @@ func (b *Backend) run(ctx context.Context, p *corev1.Pod, ps *pod) error {
 		}
 	}
 	defer func() { <-b.slots }()
+	if err := b.ensureImages(ctx, p, ps); err != nil {
+		return nil // pod deleted while pulling
+	}
 	sp, shares, err := b.buildSpec(p, ps)
 	if err != nil {
 		return err
@@ -428,6 +439,7 @@ func (b *Backend) run(ctx context.Context, p *corev1.Pod, ps *pod) error {
 	b.mu.Lock()
 	ps.vm = vm
 	b.mu.Unlock()
+	b.forwardHostPorts(p, ps)
 	for {
 		select {
 		case <-ctx.Done():
@@ -561,6 +573,9 @@ func (b *Backend) Stop(ctx context.Context, p *corev1.Pod) error {
 		tExit = time.Since(t0)
 		_ = vm.Stop()
 		tStop = time.Since(t0)
+	}
+	for _, l := range ps.listeners {
+		l.Close()
 	}
 	ps.cancel()
 	<-ps.done

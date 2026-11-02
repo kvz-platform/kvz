@@ -97,6 +97,11 @@ func (p *Provider) PreparePodNetwork(pod *corev1.Pod) {
 	if err != nil {
 		return
 	}
+	if pod.Spec.HostNetwork {
+		pod.Status.PodIP = p.hostIP
+		pod.Status.PodIPs = []corev1.PodIP{{IP: p.hostIP}}
+		return
+	}
 	if pr, ok := b.(interface{ PrepareIP(*corev1.Pod) string }); ok {
 		if ip := pr.PrepareIP(pod); ip != "" {
 			pod.Status.PodIP = ip
@@ -317,7 +322,7 @@ func Run(ctx context.Context, o Options) error {
 		return fmt.Errorf("pod network: %w", err)
 	}
 	if enabled["linux"] {
-		mb, err := microvmrt.New(o.DataDir, t, vols, pn)
+		mb, err := microvmrt.New(o.DataDir, o.NodeIP, t, vols, pn)
 		if err != nil {
 			return fmt.Errorf("linux microvm runtime: %w", err)
 		}

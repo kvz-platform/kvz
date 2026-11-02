@@ -17,6 +17,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
@@ -24,15 +25,16 @@ import (
 )
 
 type Image struct {
-	Ref        string
-	Digest     string
-	Tag        string // short virtiofs tag
-	Rootfs     string
-	Entrypoint []string
-	Cmd        []string
-	Env        []string
-	WorkingDir string
-	User       string
+	Ref         string
+	Digest      string
+	IndexDigest string // digest the tag resolved to (may be a multi-arch index)
+	Tag         string // short virtiofs tag
+	Rootfs      string
+	Entrypoint  []string
+	Cmd         []string
+	Env         []string
+	WorkingDir  string
+	User        string
 }
 
 type Store struct {
@@ -49,6 +51,100 @@ func NewStore(dir string) *Store {
 func key(ref string) string {
 	h := sha256.Sum256([]byte(ref))
 	return hex.EncodeToString(h[:8])
+}
+
+// Pull policies (corev1.PullPolicy values).
+const (
+	PullAlways       = "Always"
+	PullIfNotPresent = "IfNotPresent"
+	PullNever        = "Never"
+)
+
+// Ensure resolves ref under a pull policy with the given credentials.
+// Images are stored per digest, so re-pulling a moving tag never swaps the
+// rootfs underneath running pod VMs.
+func (s *Store) Ensure(ref, policy string, kc authn.Keychain) (*Image, error) {
+	if kc == nil {
+		kc = authn.DefaultKeychain
+	}
+	switch policy {
+	case PullNever:
+		if im := s.local(ref); im != nil {
+			return im, nil
+		}
+		return nil, fmt.Errorf("ErrImageNeverPull: image %s not present and pull policy is Never", ref)
+	case PullAlways:
+		r, err := name.ParseReference(ref)
+		if err != nil {
+			return nil, err
+		}
+		desc, err := remote.Head(r, remote.WithAuthFromKeychain(kc), remote.WithPlatform(v1.Platform{OS: "linux", Architecture: "arm64"}))
+		if err == nil {
+			if im := s.local(ref); im != nil && (im.Digest == desc.Digest.String() || im.IndexDigest == desc.Digest.String()) {
+				return im, nil
+			}
+			return s.pullLocked(ref, kc, desc.Digest.String())
+		}
+		// registry unreachable: fall back to what we have (like the kubelet would fail; be lenient offline)
+		if im := s.local(ref); im != nil {
+			return im, nil
+		}
+		return nil, err
+	}
+	if im := s.local(ref); im != nil {
+		return im, nil
+	}
+	return s.pullLocked(ref, kc, "")
+}
+
+func (s *Store) local(ref string) *Image {
+	s.mu.Lock()
+	im := s.mem[ref]
+	s.mu.Unlock()
+	if im != nil {
+		return im
+	}
+	dir := filepath.Join(s.dir, key(ref))
+	if b, err := os.ReadFile(filepath.Join(s.dir, "refs", key(ref))); err == nil {
+		dir = filepath.Join(s.dir, strings.TrimSpace(string(b)))
+	}
+	var m Image
+	if b, err := os.ReadFile(filepath.Join(dir, "image.json")); err == nil && json.Unmarshal(b, &m) == nil {
+		s.mu.Lock()
+		s.mem[ref] = &m
+		s.mu.Unlock()
+		return &m
+	}
+	return nil
+}
+
+func (s *Store) pullLocked(ref string, kc authn.Keychain, digest string) (*Image, error) {
+	s.mu.Lock()
+	l, ok := s.inf[ref]
+	if !ok {
+		l = &sync.Mutex{}
+		s.inf[ref] = l
+	}
+	s.mu.Unlock()
+	l.Lock()
+	defer l.Unlock()
+	if im := s.local(ref); im != nil && (digest == "" || im.Digest == digest || im.IndexDigest == digest) {
+		return im, nil
+	}
+	dirName := key(ref + "@" + digest)
+	im, err := s.pullAuth(ref, filepath.Join(s.dir, dirName), kc)
+	if err != nil {
+		return nil, err
+	}
+	im.IndexDigest = digest
+	b, _ := json.MarshalIndent(im, "", " ")
+	_ = os.WriteFile(filepath.Join(s.dir, dirName, "image.json"), b, 0o644)
+	_ = os.MkdirAll(filepath.Join(s.dir, "refs"), 0o755)
+	_ = os.WriteFile(filepath.Join(s.dir, "refs", key(ref)), []byte(dirName), 0o644)
+	s.mu.Lock()
+	s.mem[ref] = im
+	s.mu.Unlock()
+	return im, nil
 }
 
 // Get returns the unpacked image, pulling it if it is not in the store.
@@ -93,11 +189,15 @@ func (s *Store) Get(ref string) (*Image, error) {
 }
 
 func (s *Store) pull(ref, dir string) (*Image, error) {
+	return s.pullAuth(ref, dir, authn.DefaultKeychain)
+}
+
+func (s *Store) pullAuth(ref, dir string, kc authn.Keychain) (*Image, error) {
 	r, err := name.ParseReference(ref)
 	if err != nil {
 		return nil, err
 	}
-	img, err := remote.Image(r, remote.WithPlatform(v1.Platform{OS: "linux", Architecture: "arm64"}))
+	img, err := remote.Image(r, remote.WithAuthFromKeychain(kc), remote.WithPlatform(v1.Platform{OS: "linux", Architecture: "arm64"}))
 	if err != nil {
 		return nil, fmt.Errorf("pull %s: %w", ref, err)
 	}
@@ -118,7 +218,7 @@ func (s *Store) pull(ref, dir string) (*Image, error) {
 	if err != nil {
 		return nil, err
 	}
-	im := &Image{Ref: ref, Digest: dg.String(), Tag: "img" + key(ref), Rootfs: filepath.Join(dir, "rootfs"),
+	im := &Image{Ref: ref, Digest: dg.String(), Tag: "img" + key(dir), Rootfs: filepath.Join(dir, "rootfs"),
 		Entrypoint: cf.Config.Entrypoint, Cmd: cf.Config.Cmd, Env: cf.Config.Env, WorkingDir: cf.Config.WorkingDir, User: cf.Config.User}
 	b, _ := json.MarshalIndent(im, "", " ")
 	if err := os.WriteFile(filepath.Join(tmp, "image.json"), b, 0o644); err != nil {

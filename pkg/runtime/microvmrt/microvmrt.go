@@ -643,6 +643,9 @@ func (b *Backend) run(ctx context.Context, p *corev1.Pod, ps *pod) error {
 		}
 		ps.names = ps.names[:0]
 		if sp, shares, err = b.buildSpec(p, ps); err == nil {
+			ps.resMu.Lock()
+			ps.first, ps.applied = p.DeepCopy(), nil // resources the VM boots with
+			ps.resMu.Unlock()
 			break
 		}
 		reason, ev := "CreateContainerConfigError", "Failed"
@@ -694,6 +697,11 @@ func (b *Backend) run(ctx context.Context, p *corev1.Pod, ps *pod) error {
 	b.mu.Lock()
 	ps.vm = vm
 	b.mu.Unlock()
+	if b.kernelCgroups { // a resize that arrived while the VM booted
+		if lp := ps.latest.Load(); lp != nil {
+			go b.resize(lp, ps)
+		}
+	}
 	b.forwardHostPorts(p, ps)
 	go func() { // keep configMap/secret/downwardAPI/projected volumes current, like the kubelet
 		for {
@@ -746,8 +754,14 @@ func (b *Backend) run(ctx context.Context, p *corev1.Pod, ps *pod) error {
 						}
 					}
 					rt.SetRunning(s, e.Container, id, ready)
-					if c != nil {
-						setResources(s, e.Container, c.Resources)
+					// resources from the newest pod: a resize may already have
+					// landed before this start event (status must not revert)
+					cur := p
+					if lp := ps.latest.Load(); lp != nil {
+						cur = lp
+					}
+					if cc, _, _ := lookupContainer(cur, e.Container); cc != nil {
+						setResources(s, e.Container, cc.Resources)
 					}
 				})
 			case "ready", "unready":

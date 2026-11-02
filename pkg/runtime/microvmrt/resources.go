@@ -2,9 +2,12 @@ package microvmrt
 
 import (
 	"fmt"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
+
+	"github.com/GrowlyX/kvz/pkg/microvm"
 )
 
 // cgroupSpec is a container's cgroup v2 configuration (see kvz-init).
@@ -97,13 +100,24 @@ func (b *Backend) resize(p *corev1.Pod, ps *pod) {
 			}
 		}
 		ps.applied[c.Name] = c.Resources
-		_ = vm.Send(map[string]any{"type": "resize", "container": c.Name, "cgroup": cgroupFor(c.Resources)})
+		sendRetry(vm, map[string]any{"type": "resize", "container": c.Name, "cgroup": cgroupFor(c.Resources)})
 		if restart {
-			_ = vm.Send(map[string]any{"type": "restart-container", "container": c.Name})
+			sendRetry(vm, map[string]any{"type": "restart-container", "container": c.Name})
 		}
 		res := c.Resources
 		name := c.Name
 		b.t.Update(p.Namespace, p.Name, func(s *corev1.PodStatus) { setResources(s, name, res) })
 		b.t.Event(p.Namespace, p.Name, corev1.EventTypeNormal, "ResizeCompleted", "Resized container %s (restart: %v)", c.Name, restart)
+	}
+}
+
+// sendRetry delivers a command, waiting briefly for kvz-init's control
+// channel (it connects during boot).
+func sendRetry(vm *microvm.VM, cmd any) {
+	for i := 0; i < 100; i++ {
+		if vm.Send(cmd) == nil {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 }

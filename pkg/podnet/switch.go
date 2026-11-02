@@ -333,6 +333,11 @@ func (s *fastSwitch) proxyARP(p *swPort, frame []byte) bool {
 // netstack.
 var routerMAC = [6]byte{0x02, 0x6b, 0xff, 0xff, 0xff, 0xfe}
 
+var gatewayMACRewrites atomic.Uint64
+
+// GatewayMACRewrites counts frames guardUplink had to fix (debugging).
+func GatewayMACRewrites() uint64 { return gatewayMACRewrites.Load() }
+
 // guardUplink keeps an invariant gvisor-tap-vsock depends on: no frame
 // reaches the netstack claiming the gateway's own MAC as source. Its switch
 // learns source MACs and floods broadcasts everywhere except where a frame's
@@ -344,5 +349,6 @@ var routerMAC = [6]byte{0x02, 0x6b, 0xff, 0xff, 0xff, 0xfe}
 func (s *fastSwitch) guardUplink(q *swPort, frame []byte) {
 	if q != nil && q.uplink && s.nat != nil && len(frame) >= 12 && [6]byte(frame[6:12]) == s.nat.gwMAC {
 		copy(frame[6:12], routerMAC[:])
+		gatewayMACRewrites.Add(1)
 	}
 }

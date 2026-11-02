@@ -313,6 +313,8 @@ func Recompute(s *corev1.PodStatus) {
 		}
 	}
 	switch {
+	case s.Reason == "DeadlineExceeded": // activeDeadlineSeconds: always Failed, whatever the exit codes
+		s.Phase = corev1.PodFailed
 	case initFailed && s.Phase == corev1.PodFailed:
 	case !initDone:
 		// still initializing (or an init container is being retried)

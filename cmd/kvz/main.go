@@ -110,7 +110,7 @@ func hostname() string {
 type nodeFlags struct {
 	name, nodeIP, dataDir, defRuntime string
 	backends                          []string
-	kubeletPort, maxPods              int
+	kubeletPort, maxPods, overlayPort int
 }
 
 func (nf *nodeFlags) add(c *cobra.Command, defDir string) {
@@ -122,6 +122,7 @@ func (nf *nodeFlags) add(c *cobra.Command, defDir string) {
 	f.StringVar(&nf.defRuntime, "default-runtime", "linux", "runtime for pods without runtimeClassName")
 	f.IntVar(&nf.kubeletPort, "kubelet-port", 10250, "kubelet API port")
 	f.IntVar(&nf.maxPods, "max-pods", 1000, "pod capacity")
+	f.IntVar(&nf.overlayPort, "overlay-port", 6446, "cross-node pod network port")
 }
 
 func serverCmd() *cobra.Command {
@@ -133,6 +134,8 @@ func serverCmd() *cobra.Command {
 	var restorePath string
 	var snapInterval time.Duration
 	var snapRetention int
+	var secretsEnc bool
+	var apiExtra, cmExtra, schedExtra []string
 	var sans []string
 	home, _ := os.UserHomeDir()
 	c := &cobra.Command{
@@ -149,6 +152,7 @@ func serverCmd() *cobra.Command {
 				DataDir: filepath.Join(nf.dataDir, "server"), BindAddress: "0.0.0.0", AdvertiseIP: net.ParseIP(nf.nodeIP),
 				ExtraSANs: append(sans, nf.name), APIPort: apiPort, EtcdPort: etcdPort,
 				ServiceCIDR: "10.43.0.0/16", ClusterCIDR: "10.42.0.0/16", EtcdUnsafeNoSync: noSync,
+				SecretsEncryption: secretsEnc, ExtraAPIArgs: apiExtra, ExtraCMArgs: cmExtra, ExtraSchedArgs: schedExtra,
 			})
 			if err != nil {
 				return err
@@ -262,7 +266,7 @@ func serverCmd() *cobra.Command {
 					errc <- node.Run(ctx, node.Options{Name: nf.name, Kubeconfig: kc, DataDir: filepath.Join(nf.dataDir, "agent"),
 						NodeIP: nf.nodeIP, ListenPort: nf.kubeletPort, ServingCert: crt, ServingKey: key,
 						ClientCA: filepath.Join(cp.CA.Dir, "ca.crt"), DefaultHandler: nf.defRuntime, MaxPods: nf.maxPods, Backends: nf.backends,
-						PodCIDR: localCIDR, OverlaySecret: join.OverlaySecret(token)})
+						PodCIDR: localCIDR, OverlaySecret: join.OverlaySecret(token), OverlayPort: nf.overlayPort})
 				}()
 			}
 			select {
@@ -275,13 +279,17 @@ func serverCmd() *cobra.Command {
 	}
 	nf.add(c, filepath.Join(home, ".kvz"))
 	c.Flags().IntVar(&apiPort, "https-listen-port", 6443, "apiserver port (join endpoint uses port+1)")
+	c.Flags().BoolVar(&secretsEnc, "secrets-encryption", false, "encrypt Secrets at rest (aescbc)")
+	c.Flags().StringArrayVar(&apiExtra, "kube-apiserver-arg", nil, "extra kube-apiserver flag (name=value), repeatable")
+	c.Flags().StringArrayVar(&cmExtra, "kube-controller-manager-arg", nil, "extra kube-controller-manager flag (name=value), repeatable")
+	c.Flags().StringArrayVar(&schedExtra, "kube-scheduler-arg", nil, "extra kube-scheduler flag (name=value), repeatable")
 	c.Flags().IntVar(&etcdPort, "etcd-port", 2379, "embedded etcd client port (peer uses +1)")
 	c.Flags().BoolVar(&disableAgent, "disable-agent", false, "do not run a local node")
 	c.Flags().BoolVar(&noSync, "etcd-unsafe-no-fsync", false, "benchmark knob: disable etcd fsync")
 	c.Flags().StringVar(&restorePath, "cluster-reset-restore-path", "", "restore the datastore from this etcd snapshot before starting")
 	c.Flags().DurationVar(&snapInterval, "etcd-snapshot-interval", 12*time.Hour, "automatic etcd snapshot interval (0 disables)")
 	c.Flags().IntVar(&snapRetention, "etcd-snapshot-retention", 5, "number of automatic snapshots to keep")
-	c.Flags().StringSliceVar(&disable, "disable", nil, "bundled components to skip: traefik, local-storage, metrics-server")
+	c.Flags().StringSliceVar(&disable, "disable", nil, "bundled components to skip: traefik, helm-controller, local-storage, metrics-server")
 	c.Flags().StringVar(&etcdSync, "etcd-sync", "barrier", "etcd WAL sync on macOS: full (F_FULLFSYNC), barrier (F_BARRIERFSYNC, crash-consistent), none")
 	c.Flags().StringSliceVar(&sans, "tls-san", nil, "extra apiserver SANs")
 	return c
@@ -323,7 +331,7 @@ func agentCmd() *cobra.Command {
 			return node.Run(ctx, node.Options{Name: nf.name, Kubeconfig: kc, DataDir: dir, NodeIP: nf.nodeIP,
 				ListenPort: nf.kubeletPort, ServingCert: crt, ServingKey: key, ClientCA: ca,
 				DefaultHandler: nf.defRuntime, MaxPods: nf.maxPods, Backends: nf.backends,
-				PodCIDR: b.PodCIDR, OverlaySecret: join.OverlaySecret(token)})
+				PodCIDR: b.PodCIDR, OverlaySecret: join.OverlaySecret(token), OverlayPort: nf.overlayPort})
 		},
 	}
 	nf.add(c, filepath.Join(home, ".kvz"))
@@ -379,7 +387,13 @@ func bootstrap(ctx context.Context, kubeconfig string) error {
 		Labels: map[string]string{"k8s-app": "kube-dns", "kubernetes.io/name": "CoreDNS", "kubernetes.io/cluster-service": "true"}},
 		Spec: corev1.ServiceSpec{ClusterIP: "10.43.0.10", Ports: []corev1.ServicePort{
 			{Name: "dns", Port: 53, Protocol: corev1.ProtocolUDP}, {Name: "dns-tcp", Port: 53, Protocol: corev1.ProtocolTCP}}}}
-	if _, err := cs.CoreV1().Services("kube-system").Create(ctx, dns, metav1.CreateOptions{}); err != nil && !apierrors.IsAlreadyExists(err) {
+	// Get first: creating an existing Service with a fixed ClusterIP fails
+	// with "IP already allocated" (Invalid) rather than AlreadyExists.
+	if _, err := cs.CoreV1().Services("kube-system").Get(ctx, "kube-dns", metav1.GetOptions{}); apierrors.IsNotFound(err) {
+		if _, err := cs.CoreV1().Services("kube-system").Create(ctx, dns, metav1.CreateOptions{}); err != nil && !apierrors.IsAlreadyExists(err) {
+			return err
+		}
+	} else if err != nil {
 		return err
 	}
 	return node.EnsureRuntimeClasses(ctx, cs)

@@ -4,14 +4,18 @@ package controlplane
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"fmt"
+	"github.com/GrowlyX/kvz/pkg/egress"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/spf13/pflag"
@@ -43,6 +47,49 @@ type Config struct {
 	DisableCM        bool
 	DisableSched     bool
 	EtcdUnsafeNoSync bool // benchmark knob: skip fsync in etcd
+	// SecretsEncryption encrypts Secrets at rest in etcd (aescbc, k3s-style).
+	SecretsEncryption bool
+	// Extra component flags ("name=value"), appended last so they override.
+	ExtraAPIArgs, ExtraCMArgs, ExtraSchedArgs []string
+}
+
+func extraArgs(in []string) []string {
+	out := make([]string, 0, len(in))
+	for _, a := range in {
+		if !strings.HasPrefix(a, "--") {
+			a = "--" + a
+		}
+		out = append(out, a)
+	}
+	return out
+}
+
+// encryptionConfig writes (once) an EncryptionConfiguration with a random
+// AES-CBC key; identity stays as a fallback reader for pre-existing data.
+func encryptionConfig(credDir string) (string, error) {
+	path := filepath.Join(credDir, "encryption-config.yaml")
+	if _, err := os.Stat(path); err == nil {
+		return path, nil
+	}
+	key := make([]byte, 32)
+	if _, err := rand.Read(key); err != nil {
+		return "", err
+	}
+	cfg := `apiVersion: apiserver.config.k8s.io/v1
+kind: EncryptionConfiguration
+resources:
+- resources: [secrets]
+  providers:
+  - aescbc:
+      keys:
+      - name: kvz-` + time.Now().UTC().Format("20060102") + `
+        secret: ` + base64.StdEncoding.EncodeToString(key) + `
+  - identity: {}
+`
+	if err := os.MkdirAll(credDir, 0o700); err != nil {
+		return "", err
+	}
+	return path, os.WriteFile(path, []byte(cfg), 0o600)
 }
 
 type ControlPlane struct {
@@ -162,7 +209,20 @@ func (cp *ControlPlane) Run(ctx context.Context, ready chan<- struct{}) error {
 
 	d, tlsDir, cred := cp.Cfg.DataDir, filepath.Join(cp.Cfg.DataDir, "tls"), filepath.Join(cp.Cfg.DataDir, "cred")
 	p := func(n string) string { return filepath.Join(tlsDir, n) }
+	// apiserver -> pod network (webhooks, aggregated APIs, proxy) via kvz's
+	// CONNECT proxy; see pkg/egress.
+	egSock := filepath.Join(d, "egress.sock")
+	egCfg := filepath.Join(d, "egress-selector.yaml")
+	if err := os.WriteFile(egCfg, []byte(egress.ConfigYAML(egSock)), 0o600); err != nil {
+		return err
+	}
+	go func() {
+		if err := egress.Serve(ctx, egSock); err != nil {
+			klog.ErrorS(err, "egress proxy")
+		}
+	}()
 	apiArgs := []string{
+		"--egress-selector-config-file=" + egCfg,
 		"--etcd-servers=" + fmt.Sprintf("http://127.0.0.1:%d", cp.Cfg.EtcdPort),
 		"--bind-address=" + cp.Cfg.BindAddress,
 		fmt.Sprintf("--secure-port=%d", cp.Cfg.APIPort),
@@ -199,6 +259,17 @@ func (cp *ControlPlane) Run(ctx context.Context, ready chan<- struct{}) error {
 		"--delete-collection-workers=16", // default 1: DeleteCollection deleted pods one by one
 	}
 	_ = d
+	// Once enabled, encryption stays on: data written encrypted can only be
+	// read with the key, so an existing config is always used.
+	_, encErr := os.Stat(filepath.Join(cred, "encryption-config.yaml"))
+	if cp.Cfg.SecretsEncryption || encErr == nil {
+		ep, err := encryptionConfig(cred)
+		if err != nil {
+			return err
+		}
+		apiArgs = append(apiArgs, "--encryption-provider-config="+ep, "--encryption-provider-config-automatic-reload=true")
+	}
+	apiArgs = append(apiArgs, extraArgs(cp.Cfg.ExtraAPIArgs)...)
 	api := apiapp.NewAPIServerCommand()
 	api.SetArgs(apiArgs)
 	errc := make(chan error, 3)
@@ -214,7 +285,7 @@ func (cp *ControlPlane) Run(ctx context.Context, ready chan<- struct{}) error {
 
 	if !cp.Cfg.DisableCM {
 		cm := cmapp.NewControllerManagerCommand()
-		cm.SetArgs([]string{
+		cm.SetArgs(append([]string{
 			"--kubeconfig=" + filepath.Join(cred, "controller-manager.kubeconfig"),
 			"--authentication-kubeconfig=" + filepath.Join(cred, "controller-manager.kubeconfig"),
 			"--authorization-kubeconfig=" + filepath.Join(cred, "controller-manager.kubeconfig"),
@@ -232,7 +303,7 @@ func (cp *ControlPlane) Run(ctx context.Context, ready chan<- struct{}) error {
 			"--kube-api-qps=200", "--kube-api-burst=400",
 			"--concurrent-deployment-syncs=10", "--concurrent-replicaset-syncs=10",
 			"--profiling=false",
-		})
+		}, extraArgs(cp.Cfg.ExtraCMArgs)...))
 		go func() { errc <- fmt.Errorf("kube-controller-manager exited: %w", cm.ExecuteContext(ctx)) }()
 	}
 	if !cp.Cfg.DisableSched {
@@ -246,6 +317,7 @@ func (cp *ControlPlane) Run(ctx context.Context, ready chan<- struct{}) error {
 			"--profiling=false",
 			"--kube-api-qps=500", "--kube-api-burst=1000",
 		}
+		sargs = append(sargs, extraArgs(cp.Cfg.ExtraSchedArgs)...)
 		go func() { errc <- fmt.Errorf("kube-scheduler exited: %w", runScheduler(ctx, sargs)) }()
 	}
 	select {

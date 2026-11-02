@@ -27,7 +27,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
-	apivalidation "k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/ptr"
 )
@@ -214,7 +213,7 @@ loop:
 				}
 				// Make sure that the resulting key is a valid environment variable name.
 				// If it isn't, it should be appended to the list of invalid keys and skipped.
-				if errMsgs := apivalidation.IsEnvVarName(key); len(errMsgs) != 0 {
+				if !validEnvName(key) {
 					invalidKeys = append(invalidKeys, key)
 					continue mKeys
 				}
@@ -268,7 +267,7 @@ loop:
 				}
 				// Make sure that the resulting key is a valid environment variable name.
 				// If it isn't, it should be appended to the list of invalid keys and skipped.
-				if errMsgs := apivalidation.IsEnvVarName(key); len(errMsgs) != 0 {
+				if !validEnvName(key) {
 					invalidKeys = append(invalidKeys, key)
 					continue sKeys
 				}
@@ -337,6 +336,23 @@ func getEnvironmentVariableValue(ctx context.Context, env *corev1.EnvVar, mappin
 	return ptr.To(expansion.Expand(env.Value, mappingFunc)), nil
 }
 
+// ResolveResourceFieldRef resolves resourceFieldRef env vars (kvz patch).
+var ResolveResourceFieldRef func(fs *corev1.ResourceFieldSelector, pod *corev1.Pod, c *corev1.Container) (string, error)
+
+// validEnvName applies the relaxed (Kubernetes 1.34+) rule: any printable
+// ASCII except '=' (kvz patch; upstream VK still requires C identifiers).
+func validEnvName(k string) bool {
+	if k == "" {
+		return false
+	}
+	for _, r := range k {
+		if r < 32 || r > 126 || r == '=' {
+			return false
+		}
+	}
+	return true
+}
+
 func getEnvironmentVariableValueWithValueFrom(ctx context.Context, env *corev1.EnvVar, mappingFunc func(string) string, pod *corev1.Pod, container *corev1.Container, rm *manager.ResourceManager, recorder record.EventRecorder) (*string, error) {
 	// Handle population from a configmap key.
 	if env.ValueFrom.ConfigMapKeyRef != nil {
@@ -353,8 +369,15 @@ func getEnvironmentVariableValueWithValueFrom(ctx context.Context, env *corev1.E
 		return getEnvironmentVariableValueWithValueFromFieldRef(ctx, env, mappingFunc, pod, container, rm, recorder)
 	}
 	if env.ValueFrom.ResourceFieldRef != nil {
-		// TODO Implement populating resource requests.
-		return nil, nil
+		// kvz patch: resolved by the provider (limits default to node allocatable).
+		if ResolveResourceFieldRef == nil {
+			return nil, nil
+		}
+		v, err := ResolveResourceFieldRef(env.ValueFrom.ResourceFieldRef, pod, container)
+		if err != nil {
+			return nil, err
+		}
+		return ptr.To(v), nil
 	}
 
 	log.G(ctx).WithField("env", env).Error("Unhandled environment variable with non-nil env.ValueFrom, do not know how to populate")

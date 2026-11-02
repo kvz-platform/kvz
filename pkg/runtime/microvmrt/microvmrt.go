@@ -14,9 +14,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"k8s.io/kubernetes/third_party/forked/golang/expansion"
 	"net"
 	"os"
 	"path/filepath"
+	goruntime "runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -68,6 +70,9 @@ type pod struct {
 	cancel    context.CancelFunc
 	done      chan struct{}
 	names     []string
+	latest    atomic.Pointer[corev1.Pod] // newest pod object from UpdatePod
+	ns        string
+	refresh   chan struct{} // re-render configMap/secret/downwardAPI volumes
 }
 
 func DefaultKernel() string {
@@ -100,26 +105,76 @@ func New(dataDir, hostIP string, t *rt.Tracker, vols *volumes.Materializer, pn *
 	if v, err := strconv.Atoi(os.Getenv("KVZ_MAX_VMS")); err == nil && v > 0 {
 		maxVMs = v
 	}
+	store := image.NewStore(filepath.Join(home, ".kvz", "images"))
+	// k3s-style registry mirrors/credentials (KVZ_REGISTRIES overrides the path).
+	regPath := os.Getenv("KVZ_REGISTRIES")
+	if regPath == "" {
+		regPath = filepath.Join(home, ".kvz", "registries.yaml")
+	}
+	if err := store.LoadRegistries(regPath); err != nil {
+		return nil, err
+	}
 	return &Backend{hostIP: hostIP, dir: filepath.Join(dataDir, "mvm"), kernel: DefaultKernel(), initrd: initrd, t: t, vols: vols,
-		images: image.NewStore(filepath.Join(home, ".kvz", "images")), pnet: pn, dns: []string{"10.43.0.10"},
+		images: store, pnet: pn, dns: []string{"10.43.0.10"},
 		pods: map[string]*pod{}, pre: map[string]net.IP{}, slots: make(chan struct{}, maxVMs)}, nil
 }
 
 func (b *Backend) Handler() string { return "linux" }
 
+// UpdatePod records the newest pod object for retries of a pod that is still
+// waiting on its configuration.
+func (b *Backend) UpdatePod(p *corev1.Pod) {
+	b.mu.Lock()
+	ps := b.pods[rt.Key(p.Namespace, p.Name)]
+	b.mu.Unlock()
+	if ps != nil {
+		ps.latest.Store(p.DeepCopy())
+		ps.nudge() // labels/annotations feed downwardAPI volumes
+	}
+}
+
+func (ps *pod) nudge() {
+	if ps.refresh != nil {
+		select {
+		case ps.refresh <- struct{}{}:
+		default:
+		}
+	}
+}
+
+// RefreshVolumes re-renders the volumes of the namespace's pods (called on
+// configMap/secret changes).
+func (b *Backend) RefreshVolumes(ns string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for _, ps := range b.pods {
+		if ps.ns == ns {
+			ps.nudge()
+		}
+	}
+}
+
 // Images exposes the store (pre-pull API).
 func (b *Backend) Images() *image.Store { return b.images }
 
 type cspec struct {
-	Name     string   `json:"name"`
-	Argv     []string `json:"argv"`
-	Env      []string `json:"env"`
-	Cwd      string   `json:"cwd"`
-	UID      int      `json:"uid"`
-	GID      int      `json:"gid"`
-	ImageTag string   `json:"image_tag"`
-	Restart  string   `json:"restart"`
-	Sidecar  bool     `json:"sidecar,omitempty"`
+	Name       string   `json:"name"`
+	Argv       []string `json:"argv"`
+	Env        []string `json:"env"`
+	Cwd        string   `json:"cwd"`
+	UID        int      `json:"uid"`
+	GID        int      `json:"gid"`
+	ImageTag   string   `json:"image_tag"`
+	Restart    string   `json:"restart"`
+	Sidecar    bool     `json:"sidecar,omitempty"`
+	Groups     []int    `json:"groups,omitempty"`
+	ReadOnly   bool     `json:"ro_root,omitempty"`
+	TermPath   string   `json:"term_path,omitempty"`
+	TermLogs   bool     `json:"term_fallback_logs,omitempty"`
+	Privileged bool     `json:"privileged,omitempty"`
+	CapAdd     []string `json:"cap_add,omitempty"`
+	CapDrop    []string `json:"cap_drop,omitempty"`
+	NoNewPrivs bool     `json:"no_new_privs,omitempty"`
 
 	Readiness *probe   `json:"readiness,omitempty"`
 	Liveness  *probe   `json:"liveness,omitempty"`
@@ -185,7 +240,7 @@ func (b *Backend) Start(ctx context.Context, p *corev1.Pod) error {
 	dir := filepath.Join(b.dir, string(p.UID))
 	_ = os.MkdirAll(filepath.Join(dir, "logs"), 0o755)
 	pctx, cancel := context.WithCancel(context.Background())
-	ps := &pod{ip: ip, dir: dir, cancel: cancel, done: make(chan struct{})}
+	ps := &pod{ip: ip, dir: dir, cancel: cancel, done: make(chan struct{}), ns: p.Namespace, refresh: make(chan struct{}, 1)}
 	b.mu.Lock()
 	b.pods[key] = ps
 	b.mu.Unlock()
@@ -220,7 +275,7 @@ func (b *Backend) buildSpec(p *corev1.Pod, ps *pod) (*spec, []microvm.Share, err
 	if p.Spec.Hostname != "" {
 		sp.Hostname = p.Spec.Hostname
 	}
-	sp.Hosts = fmt.Sprintf("127.0.0.1\tlocalhost\n::1\tlocalhost\n%s\t%s\n", ps.ip, sp.Hostname)
+	sp.Hosts = hostsFile(p, ps.ip.String(), sp.Hostname)
 	shares := []microvm.Share{{Tag: "pod", Path: ps.dir}}
 	seen := map[string]bool{}
 	restart := string(p.Spec.RestartPolicy)
@@ -237,13 +292,27 @@ func (b *Backend) buildSpec(p *corev1.Pod, ps *pod) (*spec, []microvm.Share, err
 			shares = append(shares, microvm.Share{Tag: im.Tag, Path: im.Rootfs, ReadOnly: true})
 			seen[im.Tag] = true
 		}
+		// $(VAR) references in command/args expand against the container's
+		// env, as in the kubelet (image Entrypoint/Cmd are left alone).
+		vars := map[string]string{}
+		for _, e := range c.Env {
+			vars[e.Name] = e.Value
+		}
+		mapping := expansion.MappingFuncFor(vars)
+		expand := func(in []string) []string {
+			out := make([]string, len(in))
+			for i, a := range in {
+				out[i] = expansion.Expand(a, mapping)
+			}
+			return out
+		}
 		argv := im.Entrypoint
 		args := im.Cmd
 		if len(c.Command) > 0 {
-			argv, args = c.Command, nil
+			argv, args = expand(c.Command), nil
 		}
 		if len(c.Args) > 0 {
-			args = c.Args
+			args = expand(c.Args)
 		}
 		argv = append(append([]string{}, argv...), args...)
 		if len(argv) == 0 {
@@ -254,9 +323,39 @@ func (b *Backend) buildSpec(p *corev1.Pod, ps *pod) (*spec, []microvm.Share, err
 		if c.WorkingDir != "" {
 			cwd = c.WorkingDir
 		}
-		uid, gid := userIDs(im, c)
+		uid, gid := userIDs(im, c, p.Spec.SecurityContext)
+		if nonRoot(c, p.Spec.SecurityContext) && uid == 0 {
+			return cspec{}, fmt.Errorf("container has runAsNonRoot and image will run as root (pod: %q, container: %s)", p.Name, c.Name)
+		}
+		var groups []int
+		if psc := p.Spec.SecurityContext; psc != nil {
+			for _, g := range psc.SupplementalGroups {
+				groups = append(groups, int(g))
+			}
+			if psc.FSGroup != nil {
+				groups = append(groups, int(*psc.FSGroup))
+			}
+		}
+		termPath := c.TerminationMessagePath
+		if termPath == "" {
+			termPath = "/dev/termination-log"
+		}
 		cs := cspec{Name: c.Name, Argv: argv, Env: env, Cwd: cwd, UID: uid, GID: gid, ImageTag: im.Tag, Restart: restart,
+			Groups: groups, ReadOnly: c.SecurityContext != nil && c.SecurityContext.ReadOnlyRootFilesystem != nil && *c.SecurityContext.ReadOnlyRootFilesystem,
+			TermPath: termPath, TermLogs: c.TerminationMessagePolicy == corev1.TerminationMessageFallbackToLogsOnError,
 			Readiness: convProbe(c, c.ReadinessProbe), Liveness: convProbe(c, c.LivenessProbe), Startup: convProbe(c, c.StartupProbe)}
+		if sc := c.SecurityContext; sc != nil {
+			cs.Privileged = sc.Privileged != nil && *sc.Privileged
+			cs.NoNewPrivs = sc.AllowPrivilegeEscalation != nil && !*sc.AllowPrivilegeEscalation
+			if sc.Capabilities != nil {
+				for _, a := range sc.Capabilities.Add {
+					cs.CapAdd = append(cs.CapAdd, string(a))
+				}
+				for _, d := range sc.Capabilities.Drop {
+					cs.CapDrop = append(cs.CapDrop, string(d))
+				}
+			}
+		}
 		if c.Lifecycle != nil {
 			cs.PostStart = convHandler(c, c.Lifecycle.PostStart)
 			cs.PreStop = convHandler(c, c.Lifecycle.PreStop)
@@ -284,7 +383,7 @@ func (b *Backend) buildSpec(p *corev1.Pod, ps *pod) (*spec, []microvm.Share, err
 	// the "kvz" share; hostPath gets its own share.
 	mounts, err := b.vols.Materialize(p, ps.dir)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, mountError{err}
 	}
 	hp := 0
 	for cname, specs := range mounts {
@@ -323,16 +422,38 @@ func mergeEnv(base, over []string) []string {
 	return out
 }
 
-func userIDs(im *image.Image, c corev1.Container) (int, int) {
-	if c.SecurityContext != nil && c.SecurityContext.RunAsUser != nil {
-		gid := 0
-		if c.SecurityContext.RunAsGroup != nil {
-			gid = int(*c.SecurityContext.RunAsGroup)
+func nonRoot(c corev1.Container, psc *corev1.PodSecurityContext) bool {
+	if c.SecurityContext != nil && c.SecurityContext.RunAsNonRoot != nil {
+		return *c.SecurityContext.RunAsNonRoot
+	}
+	return psc != nil && psc.RunAsNonRoot != nil && *psc.RunAsNonRoot
+}
+
+func userIDs(im *image.Image, c corev1.Container, psc *corev1.PodSecurityContext) (int, int) {
+	var runAsUser, runAsGroup *int64
+	if psc != nil {
+		runAsUser, runAsGroup = psc.RunAsUser, psc.RunAsGroup
+	}
+	if c.SecurityContext != nil {
+		if c.SecurityContext.RunAsUser != nil {
+			runAsUser = c.SecurityContext.RunAsUser
 		}
-		return int(*c.SecurityContext.RunAsUser), gid
+		if c.SecurityContext.RunAsGroup != nil {
+			runAsGroup = c.SecurityContext.RunAsGroup
+		}
+	}
+	if runAsUser != nil {
+		gid := 0
+		if runAsGroup != nil {
+			gid = int(*runAsGroup)
+		}
+		return int(*runAsUser), gid
 	}
 	u := im.User
 	if u == "" {
+		if runAsGroup != nil {
+			return 0, int(*runAsGroup)
+		}
 		return 0, 0
 	}
 	parts := strings.SplitN(u, ":", 2)
@@ -365,21 +486,44 @@ func lookupUser(root, name string) (int, int) {
 	return 0, 0
 }
 
+// vcpus maps CPU limits to vCPUs. Like a cgroup without a quota, a pod with
+// any container lacking a CPU limit may use every core of the node; vCPUs are
+// host threads that cost nothing while idle.
 func vcpus(p *corev1.Pod) uint {
 	var milli int64
 	for _, c := range p.Spec.Containers {
-		if q, ok := c.Resources.Limits[corev1.ResourceCPU]; ok {
-			milli += q.MilliValue()
-		} else if q, ok := c.Resources.Requests[corev1.ResourceCPU]; ok {
-			milli += q.MilliValue()
+		q, ok := c.Resources.Limits[corev1.ResourceCPU]
+		if !ok {
+			return defaultVCPUs
 		}
+		milli += q.MilliValue()
 	}
 	n := uint((milli + 999) / 1000)
 	if n < 1 {
 		n = 1
 	}
+	if n > defaultVCPUs {
+		n = defaultVCPUs
+	}
 	return n
 }
+
+var defaultMemMB = func() uint64 {
+	if v, err := strconv.Atoi(os.Getenv("KVZ_DEFAULT_MEMORY_MB")); err == nil && v > 0 {
+		return uint64(v)
+	}
+	// Pods without a memory limit may use node memory. Guest RAM is backed
+	// lazily, but the guest kernel's memmap costs ~28 MB of host memory per GB
+	// at boot, so the default is 2 GiB rather than all of the Mac's memory.
+	return 2048
+}()
+
+var defaultVCPUs = func() uint {
+	if v, err := strconv.Atoi(os.Getenv("KVZ_DEFAULT_VCPUS")); err == nil && v > 0 {
+		return uint(v)
+	}
+	return uint(goruntime.NumCPU())
+}()
 
 func memMB(p *corev1.Pod) uint64 {
 	var bytes int64
@@ -390,7 +534,7 @@ func memMB(p *corev1.Pod) uint64 {
 	}
 	mb := uint64(bytes >> 20)
 	if mb == 0 {
-		mb = 512 // only touched pages are backed by host memory
+		mb = defaultMemMB // only touched pages are backed by host memory
 	}
 	if mb < 128 {
 		mb = 128
@@ -417,9 +561,34 @@ func (b *Backend) run(ctx context.Context, p *corev1.Pod, ps *pod) error {
 	if err := b.ensureImages(ctx, p, ps); err != nil {
 		return nil // pod deleted while pulling
 	}
-	sp, shares, err := b.buildSpec(p, ps)
-	if err != nil {
-		return err
+	// Like the kubelet, configuration problems (missing configMaps/secrets,
+	// runAsNonRoot violations) leave the pod waiting and are retried.
+	var sp *spec
+	var shares []microvm.Share
+	for delay := 250 * time.Millisecond; ; delay = min(delay*2, 10*time.Second) {
+		var err error
+		if lp := ps.latest.Load(); lp != nil {
+			p = lp // e.g. annotations a subPathExpr depends on were fixed
+		}
+		ps.names = ps.names[:0]
+		if sp, shares, err = b.buildSpec(p, ps); err == nil {
+			break
+		}
+		reason, ev := "CreateContainerConfigError", "Failed"
+		if _, ok := err.(mountError); ok {
+			reason, ev = "ContainerCreating", "FailedMount"
+		}
+		b.t.Update(p.Namespace, p.Name, func(s *corev1.PodStatus) {
+			for _, c := range append(append([]corev1.Container{}, p.Spec.InitContainers...), p.Spec.Containers...) {
+				rt.SetWaiting(s, c.Name, reason, err.Error())
+			}
+		})
+		b.t.Event(p.Namespace, p.Name, corev1.EventTypeWarning, ev, "Error: %v", err)
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-time.After(delay):
+		}
 	}
 	raw, _ := json.Marshal(sp)
 	if err := os.WriteFile(filepath.Join(ps.dir, "spec.json"), raw, 0o644); err != nil {
@@ -440,14 +609,20 @@ func (b *Backend) run(ctx context.Context, p *corev1.Pod, ps *pod) error {
 	ps.vm = vm
 	b.mu.Unlock()
 	b.forwardHostPorts(p, ps)
-	go func() { // keep configMap/secret/downwardAPI volumes current, like the kubelet
+	go func() { // keep configMap/secret/downwardAPI/projected volumes current, like the kubelet
 		for {
 			select {
 			case <-ctx.Done():
 				return
-			case <-time.After(30 * time.Second):
-				b.vols.Refresh(p, ps.dir)
+			case <-ps.refresh:
+				time.Sleep(50 * time.Millisecond) // coalesce bursts; let informers settle
+			case <-time.After(60 * time.Second):
 			}
+			cur := p
+			if lp := ps.latest.Load(); lp != nil {
+				cur = lp
+			}
+			b.vols.Refresh(cur, ps.dir)
 		}
 	}()
 	for {
@@ -513,6 +688,7 @@ func (b *Backend) run(ctx context.Context, p *corev1.Pod, ps *pod) error {
 					switch {
 					case ps.stopping.Load():
 						rt.SetTerminated(s, e.Container, code, reason)
+						rt.SetTerminationMessage(s, e.Container, e.Msg)
 					case sidecar:
 						rt.SetCrashLoop(s, e.Container, code, reason)
 					case isInit && code == 0:
@@ -531,6 +707,7 @@ func (b *Backend) run(ctx context.Context, p *corev1.Pod, ps *pod) error {
 					default:
 						rt.SetTerminated(s, e.Container, code, reason)
 					}
+					rt.SetTerminationMessage(s, e.Container, e.Msg)
 				})
 			case "error":
 				klog.InfoS("kvz-init error", "pod", rt.Key(p.Namespace, p.Name), "msg", e.Msg)
@@ -661,3 +838,25 @@ func lookupContainer(p *corev1.Pod, name string) (c *corev1.Container, isInit, s
 	}
 	return nil, false, false
 }
+
+// hostsFile renders /etc/hosts like the kubelet (hostname/subdomain FQDN, hostAliases).
+func hostsFile(p *corev1.Pod, ip, hostname string) string {
+	var b strings.Builder
+	b.WriteString("# Kubernetes-managed hosts file.\n127.0.0.1\tlocalhost\n::1\tlocalhost ip6-localhost ip6-loopback\nfe00::0\tip6-localnet\nfe00::0\tip6-mcastprefix\nfe00::1\tip6-allnodes\nfe00::2\tip6-allrouters\n")
+	if p.Spec.Subdomain != "" {
+		fmt.Fprintf(&b, "%s\t%s.%s.%s.svc.cluster.local\t%s\n", ip, hostname, p.Spec.Subdomain, p.Namespace, hostname)
+	} else {
+		fmt.Fprintf(&b, "%s\t%s\n", ip, hostname)
+	}
+	if len(p.Spec.HostAliases) > 0 {
+		b.WriteString("\n# Entries added by HostAliases.\n")
+		for _, a := range p.Spec.HostAliases {
+			fmt.Fprintf(&b, "%s\t%s\n", a.IP, strings.Join(a.Hostnames, "\t"))
+		}
+	}
+	return b.String()
+}
+
+type mountError struct{ error }
+
+func (e mountError) Unwrap() error { return e.error }

@@ -5,6 +5,7 @@ package volumes
 import (
 	"context"
 	"fmt"
+	"github.com/GrowlyX/kvz/pkg/downward"
 	"os"
 	"path/filepath"
 	"sort"
@@ -12,9 +13,7 @@ import (
 	"strings"
 	"time"
 
-	authv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	corev1listers "k8s.io/client-go/listers/core/v1"
@@ -48,47 +47,12 @@ func (m *Materializer) Materialize(pod *corev1.Pod, podDir string) (map[string][
 				return nil, err
 			}
 			dst = path
-		case v.ConfigMap != nil && m.ConfigMaps != nil:
-			cm, err := m.ConfigMaps.ConfigMaps(pod.Namespace).Get(v.ConfigMap.Name)
-			if err != nil {
-				if v.ConfigMap.Optional != nil && *v.ConfigMap.Optional {
-					_ = os.MkdirAll(dst, 0o755)
-					break
-				}
-				return nil, fmt.Errorf("configmap %s: %w", v.ConfigMap.Name, err)
-			}
-			files := map[string][]byte{}
-			for k, s := range cm.Data {
-				files[k] = []byte(s)
-			}
-			for k, b := range cm.BinaryData {
-				files[k] = b
-			}
-			if err := write(dst, files, v.ConfigMap.Items); err != nil {
-				return nil, err
-			}
-		case v.Secret != nil && m.Secrets != nil:
-			s, err := m.Secrets.Secrets(pod.Namespace).Get(v.Secret.SecretName)
-			if err != nil {
-				if v.Secret.Optional != nil && *v.Secret.Optional {
-					_ = os.MkdirAll(dst, 0o700)
-					break
-				}
-				return nil, fmt.Errorf("secret %s: %w", v.Secret.SecretName, err)
-			}
-			if err := write(dst, s.Data, v.Secret.Items); err != nil {
-				return nil, err
-			}
-		case v.DownwardAPI != nil:
-			if err := write(dst, downwardFiles(pod, v.DownwardAPI.Items), nil); err != nil {
-				return nil, err
-			}
-		case v.Projected != nil:
-			files, err := m.projected(pod, v.Projected)
+		case v.ConfigMap != nil || v.Secret != nil || v.DownwardAPI != nil || v.Projected != nil:
+			c, err := m.render(pod, v, dst, false)
 			if err != nil {
 				return nil, err
 			}
-			if err := write(dst, files, nil); err != nil {
+			if err := syncDir(dst, c); err != nil {
 				return nil, err
 			}
 		default:
@@ -103,8 +67,23 @@ func (m *Materializer) Materialize(pod *corev1.Pod, podDir string) (map[string][
 			if !ok {
 				continue
 			}
-			if vm.SubPath != "" {
-				p = filepath.Join(p, vm.SubPath)
+			sub := vm.SubPath
+			if vm.SubPathExpr != "" {
+				sub = expandEnv(vm.SubPathExpr, c.Env)
+			}
+			if sub != "" {
+				if filepath.IsAbs(sub) {
+					return nil, fmt.Errorf("failed to prepare subPath for volumeMount %q of container %q: subpath %q must not be absolute", vm.Name, c.Name, sub)
+				}
+				for _, part := range strings.Split(filepath.ToSlash(sub), "/") {
+					if part == ".." {
+						return nil, fmt.Errorf("failed to prepare subPath for volumeMount %q of container %q: subpath %q must not contain '..'", vm.Name, c.Name, sub)
+					}
+				}
+				p = filepath.Join(p, sub)
+				if _, err := os.Lstat(p); os.IsNotExist(err) {
+					_ = os.MkdirAll(p, 0o777) // the kubelet creates missing subpaths as directories
+				}
 			}
 			spec := p + ":" + vm.MountPath
 			if vm.ReadOnly {
@@ -114,135 +93,6 @@ func (m *Materializer) Materialize(pod *corev1.Pod, podDir string) (map[string][
 		}
 	}
 	return out, nil
-}
-
-func write(dir string, files map[string][]byte, items []corev1.KeyToPath) error {
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
-	if len(items) > 0 {
-		sel := map[string][]byte{}
-		for _, it := range items {
-			if b, ok := files[it.Key]; ok {
-				sel[it.Path] = b
-			}
-		}
-		files = sel
-	}
-	for name, b := range files {
-		p := filepath.Join(dir, name)
-		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-			return err
-		}
-		if old, err := os.ReadFile(p); err == nil && string(old) == string(b) {
-			continue // unchanged
-		}
-		tmp := p + ".kvz-tmp"
-		if err := os.WriteFile(tmp, b, 0o644); err != nil {
-			return err
-		}
-		if err := os.Rename(tmp, p); err != nil { // atomic for readers in the guest
-			return err
-		}
-	}
-	return nil
-}
-
-// projected materializes a projected volume: service-account tokens (via the
-// TokenRequest API, bound to the pod), configMaps, secrets and the downward
-// API's namespace/name fields. This is what kube-api-access-* volumes need.
-func (m *Materializer) projected(pod *corev1.Pod, pv *corev1.ProjectedVolumeSource) (map[string][]byte, error) {
-	files := map[string][]byte{}
-	for _, src := range pv.Sources {
-		switch {
-		case src.ServiceAccountToken != nil && m.Client != nil:
-			t := src.ServiceAccountToken
-			exp := int64(24 * 3600)
-			if t.ExpirationSeconds != nil && *t.ExpirationSeconds > exp {
-				exp = *t.ExpirationSeconds
-			}
-			req := &authv1.TokenRequest{Spec: authv1.TokenRequestSpec{
-				ExpirationSeconds: &exp,
-				BoundObjectRef:    &authv1.BoundObjectReference{Kind: "Pod", APIVersion: "v1", Name: pod.Name, UID: pod.UID},
-			}}
-			if t.Audience != "" {
-				req.Spec.Audiences = []string{t.Audience}
-			}
-			sa := pod.Spec.ServiceAccountName
-			if sa == "" {
-				sa = "default"
-			}
-			// The Node authorizer learns pod->node bindings from an informer; right
-			// after scheduling it can still deny the request. Retry like the kubelet.
-			var tr *authv1.TokenRequest
-			var err error
-			for delay := 5 * time.Millisecond; ; delay *= 2 {
-				tr, err = m.Client.CoreV1().ServiceAccounts(pod.Namespace).CreateToken(context.Background(), sa, req, metav1.CreateOptions{})
-				if err == nil || delay > 2*time.Second {
-					break
-				}
-				time.Sleep(delay)
-			}
-			if err != nil {
-				return nil, fmt.Errorf("service account token: %w", err)
-			}
-			files[t.Path] = []byte(tr.Status.Token)
-		case src.ConfigMap != nil && m.ConfigMaps != nil:
-			cm, err := m.ConfigMaps.ConfigMaps(pod.Namespace).Get(src.ConfigMap.Name)
-			if err != nil {
-				if src.ConfigMap.Optional != nil && *src.ConfigMap.Optional {
-					continue
-				}
-				return nil, fmt.Errorf("configmap %s: %w", src.ConfigMap.Name, err)
-			}
-			all := map[string][]byte{}
-			for k, v := range cm.Data {
-				all[k] = []byte(v)
-			}
-			for k, v := range cm.BinaryData {
-				all[k] = v
-			}
-			pick(files, all, src.ConfigMap.Items)
-		case src.Secret != nil && m.Secrets != nil:
-			sec, err := m.Secrets.Secrets(pod.Namespace).Get(src.Secret.Name)
-			if err != nil {
-				if src.Secret.Optional != nil && *src.Secret.Optional {
-					continue
-				}
-				return nil, fmt.Errorf("secret %s: %w", src.Secret.Name, err)
-			}
-			pick(files, sec.Data, src.Secret.Items)
-		case src.DownwardAPI != nil:
-			for _, it := range src.DownwardAPI.Items {
-				if it.FieldRef == nil {
-					continue
-				}
-				switch it.FieldRef.FieldPath {
-				case "metadata.namespace":
-					files[it.Path] = []byte(pod.Namespace)
-				case "metadata.name":
-					files[it.Path] = []byte(pod.Name)
-				case "metadata.uid":
-					files[it.Path] = []byte(pod.UID)
-				}
-			}
-		}
-	}
-	return files, nil
-}
-
-func pick(dst, src map[string][]byte, items []corev1.KeyToPath) {
-	if len(items) == 0 {
-		for k, v := range src {
-			dst[k] = v
-		}
-		return
-	}
-	for _, it := range items {
-		if v, ok := src[it.Key]; ok {
-			dst[it.Path] = v
-		}
-	}
 }
 
 // pvcPath resolves a bound PVC to the host directory backing its PV
@@ -314,55 +164,43 @@ func downwardFiles(pod *corev1.Pod, items []corev1.DownwardAPIVolumeFile) map[st
 				out[it.Path] = kv(pod.Annotations)
 			}
 		case it.ResourceFieldRef != nil:
-			for _, c := range pod.Spec.Containers {
-				if it.ResourceFieldRef.ContainerName != "" && c.Name != it.ResourceFieldRef.ContainerName {
-					continue
-				}
-				res := it.ResourceFieldRef.Resource
-				var q resource.Quantity
-				var ok bool
-				if strings.HasPrefix(res, "limits.") {
-					q, ok = c.Resources.Limits[corev1.ResourceName(strings.TrimPrefix(res, "limits."))]
-				} else {
-					q, ok = c.Resources.Requests[corev1.ResourceName(strings.TrimPrefix(res, "requests."))]
-				}
-				if ok {
-					div := it.ResourceFieldRef.Divisor
-					if div.IsZero() {
-						div = resource.MustParse("1")
-					}
-					out[it.Path] = []byte(strconv.FormatInt((q.MilliValue()+div.MilliValue()-1)/div.MilliValue(), 10))
-				}
-				break
+			if v, err := downward.Resource(it.ResourceFieldRef, pod, it.ResourceFieldRef.ContainerName); err == nil {
+				out[it.Path] = []byte(v)
 			}
 		}
 	}
 	return out
 }
 
-// Refresh rewrites configMap, secret and downwardAPI volumes of a running pod
-// (the kubelet's periodic volume sync), so mounted content follows updates.
-func (m *Materializer) Refresh(pod *corev1.Pod, podDir string) {
-	for _, v := range pod.Spec.Volumes {
-		dst := filepath.Join(podDir, "volumes", v.Name)
-		switch {
-		case v.ConfigMap != nil && m.ConfigMaps != nil:
-			if cm, err := m.ConfigMaps.ConfigMaps(pod.Namespace).Get(v.ConfigMap.Name); err == nil {
-				files := map[string][]byte{}
-				for k, s := range cm.Data {
-					files[k] = []byte(s)
-				}
-				for k, b := range cm.BinaryData {
-					files[k] = b
-				}
-				_ = write(dst, files, v.ConfigMap.Items)
-			}
-		case v.Secret != nil && m.Secrets != nil:
-			if s, err := m.Secrets.Secrets(pod.Namespace).Get(v.Secret.SecretName); err == nil {
-				_ = write(dst, s.Data, v.Secret.Items)
-			}
-		case v.DownwardAPI != nil:
-			_ = write(dst, downwardFiles(pod, v.DownwardAPI.Items), nil)
-		}
+// expandEnv expands $(VAR) references like the kubelet (unknown vars stay as is,
+// $$ escapes).
+func expandEnv(in string, env []corev1.EnvVar) string {
+	vals := map[string]string{}
+	for _, e := range env {
+		vals[e.Name] = e.Value
 	}
+	var b strings.Builder
+	for i := 0; i < len(in); i++ {
+		if in[i] == '$' && i+1 < len(in) {
+			if in[i+1] == '$' {
+				b.WriteByte('$')
+				i++
+				continue
+			}
+			if in[i+1] == '(' {
+				if j := strings.IndexByte(in[i+2:], ')'); j >= 0 {
+					name := in[i+2 : i+2+j]
+					if v, ok := vals[name]; ok {
+						b.WriteString(v)
+					} else {
+						b.WriteString(in[i : i+3+j])
+					}
+					i += 2 + j
+					continue
+				}
+			}
+		}
+		b.WriteByte(in[i])
+	}
+	return b.String()
 }

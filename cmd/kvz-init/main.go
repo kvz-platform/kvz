@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -34,16 +33,24 @@ import (
 )
 
 type Container struct {
-	Name     string   `json:"name"`
-	Argv     []string `json:"argv"`
-	Env      []string `json:"env"`
-	Cwd      string   `json:"cwd"`
-	UID      int      `json:"uid"`
-	GID      int      `json:"gid"`
-	TTY      bool     `json:"tty"`
-	ImageTag string   `json:"image_tag"`         // virtiofs tag of the image rootfs
-	Restart  string   `json:"restart"`           // Always | OnFailure | Never
-	Sidecar  bool     `json:"sidecar,omitempty"` // restartable init container
+	Name       string   `json:"name"`
+	Argv       []string `json:"argv"`
+	Env        []string `json:"env"`
+	Cwd        string   `json:"cwd"`
+	UID        int      `json:"uid"`
+	GID        int      `json:"gid"`
+	TTY        bool     `json:"tty"`
+	ImageTag   string   `json:"image_tag"`         // virtiofs tag of the image rootfs
+	Restart    string   `json:"restart"`           // Always | OnFailure | Never
+	Sidecar    bool     `json:"sidecar,omitempty"` // restartable init container
+	Groups     []int    `json:"groups,omitempty"`  // supplementary groups
+	ReadOnly   bool     `json:"ro_root,omitempty"` // readOnlyRootFilesystem
+	TermPath   string   `json:"term_path,omitempty"`
+	TermLogs   bool     `json:"term_fallback_logs,omitempty"` // FallbackToLogsOnError
+	Privileged bool     `json:"privileged,omitempty"`
+	CapAdd     []string `json:"cap_add,omitempty"`
+	CapDrop    []string `json:"cap_drop,omitempty"`
+	NoNewPrivs bool     `json:"no_new_privs,omitempty"`
 
 	Readiness *Probe   `json:"readiness,omitempty"`
 	Liveness  *Probe   `json:"liveness,omitempty"`
@@ -134,6 +141,10 @@ func dialHost() (*os.File, error) {
 }
 
 func main() {
+	if len(os.Args) > 0 && os.Args[0] == "kvz-exec" {
+		trampoline()
+		return
+	}
 	t0 := bootMs()
 	// Essential mounts only.
 	must(mount("proc", "/proc", "proc", 0, ""), "mount /proc")
@@ -209,6 +220,17 @@ func main() {
 			_ = os.WriteFile(etc+"/hosts", []byte(spec.Hosts), 0o644)
 		}
 		_ = os.WriteFile(etc+"/hostname", []byte(spec.Hostname+"\n"), 0o644)
+		if c.TermPath != "" {
+			tf := "/rw/" + c.Name + "/termination-log"
+			_ = os.WriteFile(tf, nil, 0o666)
+			_ = os.Chmod(tf, 0o666) // writable by any container user (umask)
+			dst := secureJoin(root, c.TermPath)
+			_ = os.MkdirAll(filepath.Dir(dst), 0o755)
+			if f, err := os.OpenFile(dst, os.O_CREATE|os.O_RDWR, 0o666); err == nil {
+				f.Close()
+			}
+			_ = unix.Mount(tf, dst, "", unix.MS_BIND, "")
+		}
 		for _, m := range spec.Mounts {
 			if m.Container != c.Name {
 				continue
@@ -228,6 +250,11 @@ func main() {
 		}
 	}
 
+	for _, c := range append(append([]Container{}, spec.Inits...), spec.Containers...) {
+		if c.ReadOnly {
+			_ = unix.Mount("", "/c/"+c.Name, "", unix.MS_REMOUNT|unix.MS_RDONLY, "")
+		}
+	}
 	must(<-netDone, "network")
 	conn := <-connc
 	if conn != nil {
@@ -281,7 +308,7 @@ func main() {
 				delete(probeStop, name)
 			}
 			stopMu.Unlock()
-			emit(Event{Type: "exit", Container: name, Code: code})
+			emit(Event{Type: "exit", Container: name, Code: code, Msg: terminationMessage(name, code)})
 			exitMu.Lock()
 			ch, isInit := exitChans[name]
 			exitMu.Unlock()
@@ -391,18 +418,15 @@ func startContainer(c Container) { startContainerOpts(c, false) }
 
 func startContainerOpts(c Container, restart bool) {
 	logf := openLog(c.Name, restart)
-	root := "/c/" + c.Name
-	argv0 := resolve(root, c.Argv[0], c.Env)
 	or, ow, _ := os.Pipe()
 	er, ew, _ := os.Pipe()
-	cmd := &exec.Cmd{Path: argv0, Args: c.Argv, Env: c.Env, Dir: c.Cwd, Stdout: ow, Stderr: ew,
-		SysProcAttr: &syscall.SysProcAttr{Chroot: root, Setsid: true,
-			Credential: &syscall.Credential{Uid: uint32(c.UID), Gid: uint32(c.GID)}}}
-	if cmd.Dir == "" {
-		cmd.Dir = "/"
-	}
+	cmd, err := containerCmd(c, c.Argv)
 	pmu.Lock()
-	err := cmd.Start()
+	if err == nil {
+		cmd.Stdout, cmd.Stderr = ow, ew
+		cmd.SysProcAttr.Setsid = true
+		err = cmd.Start()
+	}
 	if err == nil {
 		pids[cmd.Process.Pid] = c.Name
 	}
@@ -524,4 +548,86 @@ func secureJoin(root, path string) string {
 		cur = next
 	}
 	return root + cur
+}
+
+// groups is the container's supplementary group list: the groups the image's
+// /etc/group gives the user (like containerd), plus supplementalGroups/fsGroup.
+func groups(c Container, root string) []uint32 {
+	seen := map[uint32]bool{}
+	var out []uint32
+	add := func(g uint32) {
+		if !seen[g] {
+			seen[g] = true
+			out = append(out, g)
+		}
+	}
+	if user := userName(root, c.UID); user != "" {
+		if b, err := os.ReadFile(secureJoin(root, "/etc/group")); err == nil {
+			for _, line := range strings.Split(string(b), "\n") {
+				f := strings.Split(line, ":")
+				if len(f) < 4 {
+					continue
+				}
+				for _, m := range strings.Split(f[3], ",") {
+					if m == user {
+						if gid, err := strconv.Atoi(f[2]); err == nil {
+							add(uint32(gid))
+						}
+					}
+				}
+			}
+		}
+	}
+	for _, g := range c.Groups {
+		add(uint32(g))
+	}
+	return out
+}
+
+func userName(root string, uid int) string {
+	b, err := os.ReadFile(secureJoin(root, "/etc/passwd"))
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(b), "\n") {
+		f := strings.Split(line, ":")
+		if len(f) >= 3 && f[2] == strconv.Itoa(uid) {
+			return f[0]
+		}
+	}
+	return ""
+}
+
+// terminationMessage implements terminationMessagePath/Policy: the file's
+// content (max 4 KiB), or with FallbackToLogsOnError the log tail on failure.
+func terminationMessage(name string, code int) string {
+	c, ok := specByName[name]
+	if !ok || c.TermPath == "" {
+		return ""
+	}
+	b, _ := os.ReadFile("/rw/" + name + "/termination-log")
+	if len(b) > 4096 {
+		b = b[:4096]
+	}
+	if len(b) == 0 && c.TermLogs && code != 0 {
+		raw, _ := os.ReadFile(logPath(name))
+		lines := strings.Split(strings.TrimRight(string(raw), "\n"), "\n")
+		if len(lines) > 80 {
+			lines = lines[len(lines)-80:]
+		}
+		var out strings.Builder
+		for _, l := range lines {
+			// strip "<ts> <stream> <tag> "
+			if f := strings.SplitN(l, " ", 4); len(f) == 4 {
+				l = f[3]
+			}
+			out.WriteString(l + "\n")
+		}
+		msg := out.String()
+		if len(msg) > 2048 {
+			msg = msg[len(msg)-2048:]
+		}
+		return msg
+	}
+	return string(b)
 }

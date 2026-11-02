@@ -11,10 +11,8 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/exec"
 	"strconv"
 	"sync"
-	"syscall"
 	"time"
 
 	"golang.org/x/sys/unix"
@@ -101,16 +99,15 @@ func runIn(c Container, argv []string, timeout time.Duration) (int, string) {
 	if len(argv) == 0 {
 		return 1, "empty command"
 	}
-	root := "/c/" + c.Name
-	r, w, _ := os.Pipe()
-	cmd := &exec.Cmd{Path: resolve(root, argv[0], c.Env), Args: argv, Env: c.Env, Dir: "/",
-		Stdout: w, Stderr: w,
-		SysProcAttr: &syscall.SysProcAttr{Chroot: root, Setsid: true, Credential: &syscall.Credential{Uid: uint32(c.UID), Gid: uint32(c.GID)}}}
-	if c.Cwd != "" {
-		cmd.Dir = c.Cwd
+	cmd, err := containerCmd(c, argv)
+	if err != nil {
+		return 126, err.Error()
 	}
+	r, w, _ := os.Pipe()
+	cmd.Stdout, cmd.Stderr = w, w
+	cmd.SysProcAttr.Setsid = true
 	pmu.Lock()
-	err := cmd.Start()
+	err = cmd.Start()
 	var ch chan int
 	if err == nil {
 		ch = registerWaiter(cmd.Process.Pid)

@@ -1,0 +1,33 @@
+# Bundled HelmChart / HelmChartConfig support (helm.cattle.io/v1, the k3s
+# helm-controller): HelmChart objects are installed by Jobs running Helm.
+# Disable with: kvz server --disable helm-controller
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: helm-controller, namespace: kube-system}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata: {name: kvz-helm-controller}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: cluster-admin}
+subjects: [{kind: ServiceAccount, name: helm-controller, namespace: kube-system}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: helm-controller, namespace: kube-system, labels: {app: helm-controller}}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: helm-controller}}
+  template:
+    metadata: {labels: {app: helm-controller}}
+    spec:
+      serviceAccountName: helm-controller
+      containers:
+      - name: helm-controller
+        image: docker.io/rancher/helm-controller:v0.17.9
+        command: [helm-controller]
+        env:
+        - name: NODE_NAME
+          valueFrom: {fieldRef: {fieldPath: spec.nodeName}}
+        - {name: JOB_CLUSTER_ROLE, value: cluster-admin}
+        - {name: DEFAULT_JOB_IMAGE, value: "docker.io/rancher/klipper-helm:v0.13.3-build20261021"}
+        resources: {limits: {cpu: "1", memory: 256Mi}}

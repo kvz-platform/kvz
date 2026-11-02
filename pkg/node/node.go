@@ -7,7 +7,11 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"github.com/GrowlyX/kvz/pkg/downward"
+	"github.com/GrowlyX/kvz/pkg/egress"
+	vknode "github.com/virtual-kubelet/virtual-kubelet/node"
 	"io"
+	"k8s.io/client-go/tools/cache"
 	"net"
 	"net/http"
 	"os"
@@ -19,7 +23,6 @@ import (
 	dto "github.com/prometheus/client_model/go"
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/mem"
-	vknode "github.com/virtual-kubelet/virtual-kubelet/node"
 	"github.com/virtual-kubelet/virtual-kubelet/node/api"
 	"github.com/virtual-kubelet/virtual-kubelet/node/nodeutil"
 	corev1 "k8s.io/api/core/v1"
@@ -121,7 +124,18 @@ func (p *Provider) PreparePodNetwork(pod *corev1.Pod) {
 	}
 }
 
-func (p *Provider) UpdatePod(ctx context.Context, pod *corev1.Pod) error { return nil }
+// UpdatePod forwards spec/metadata updates (env re-resolved by the pod
+// controller) to backends that react to them.
+func (p *Provider) UpdatePod(ctx context.Context, pod *corev1.Pod) error {
+	b, err := p.backendFor(pod)
+	if err != nil {
+		return nil
+	}
+	if u, ok := b.(interface{ UpdatePod(*corev1.Pod) }); ok {
+		u.UpdatePod(pod)
+	}
+	return nil
+}
 
 func (p *Provider) DeletePod(ctx context.Context, pod *corev1.Pod) error {
 	b, err := p.backendFor(pod)
@@ -387,6 +401,7 @@ func Run(ctx context.Context, o Options) error {
 	if err != nil {
 		return fmt.Errorf("pod network: %w", err)
 	}
+	egress.Register(pn)
 	if enabled["linux"] {
 		mb, err := microvmrt.New(o.DataDir, o.NodeIP, t, vols, pn)
 		if err != nil {
@@ -397,12 +412,39 @@ func Run(ctx context.Context, o Options) error {
 	if enabled["apple"] {
 		p.backends["apple"] = linux.New(o.DataDir, o.NodeIP, t, vols)
 	}
+	// configMap/secret changes re-render the volumes of affected pods now
+	// rather than at the next periodic sync.
+	nudge := func(obj any) {
+		ns := ""
+		switch o := obj.(type) {
+		case *corev1.ConfigMap:
+			ns = o.Namespace
+		case *corev1.Secret:
+			ns = o.Namespace
+		case cache.DeletedFinalStateUnknown:
+			if m, ok := o.Obj.(metav1.Object); ok {
+				ns = m.GetNamespace()
+			}
+		}
+		for _, b := range p.backends {
+			if r, ok := b.(interface{ RefreshVolumes(ns string) }); ok {
+				r.RefreshVolumes(ns)
+			}
+		}
+	}
+	vh := cache.ResourceEventHandlerFuncs{AddFunc: nudge, UpdateFunc: func(_, n any) { nudge(n) }, DeleteFunc: nudge}
+	_, _ = scmInf.Core().V1().ConfigMaps().Informer().AddEventHandler(vh)
+	_, _ = scmInf.Core().V1().Secrets().Informer().AddEventHandler(vh)
 	if enabled["darwin"] {
 		p.backends["darwin"] = process.New(o.DataDir, o.NodeIP, t)
 	}
 	if enabled["macos"] {
 		p.backends["macos"] = macos.New(o.DataDir, t, pn)
 	}
+	downward.SetNodeAllocatable(capacity)
+	vknode.SetResourceFieldRefResolver(func(fs *corev1.ResourceFieldSelector, pod *corev1.Pod, c *corev1.Container) (string, error) {
+		return downward.Resource(fs, pod, c.Name)
+	})
 	spec := corev1.Node{
 		ObjectMeta: metav1.ObjectMeta{Name: o.Name, Labels: labels},
 		Status: corev1.NodeStatus{

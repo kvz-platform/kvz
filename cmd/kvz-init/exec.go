@@ -8,9 +8,7 @@ import (
 	"encoding/json"
 	"io"
 	"os"
-	"os/exec"
 	"sync"
-	"syscall"
 
 	"github.com/creack/pty"
 	"golang.org/x/sys/unix"
@@ -97,11 +95,11 @@ func handleExec(conn *os.File) {
 			break
 		}
 	}
-	root := "/c/" + c.Name
-	cmd := &exec.Cmd{Path: resolve(root, req.Argv[0], c.Env), Args: req.Argv, Env: c.Env, Dir: "/",
-		SysProcAttr: &syscall.SysProcAttr{Chroot: root, Credential: &syscall.Credential{Uid: uint32(c.UID), Gid: uint32(c.GID)}}}
-	if c.Cwd != "" {
-		cmd.Dir = c.Cwd
+	cmd, err := containerCmd(c, req.Argv)
+	if err != nil {
+		stderr.Write([]byte(err.Error() + "\n"))
+		sendExit(conn, &mu, 127)
+		return
 	}
 	var stdinW io.WriteCloser
 	var ptmx *os.File

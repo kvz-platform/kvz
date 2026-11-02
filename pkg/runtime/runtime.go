@@ -349,3 +349,17 @@ type PodStats struct {
 	MemBytes   uint64
 	Containers map[string]ContainerStats
 }
+
+// SetTerminationMessage stores a container's termination message.
+func SetTerminationMessage(s *corev1.PodStatus, container, msg string) {
+	if msg == "" {
+		return
+	}
+	if cs := find(s, container); cs != nil {
+		if cs.State.Terminated != nil {
+			cs.State.Terminated.Message = msg
+		} else if cs.LastTerminationState.Terminated != nil {
+			cs.LastTerminationState.Terminated.Message = msg
+		}
+	}
+}

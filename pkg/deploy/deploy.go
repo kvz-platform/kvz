@@ -31,8 +31,11 @@ import (
 //go:embed traefik.yaml
 var traefikYAML []byte
 
+//go:embed helm-controller.yaml
+var helmControllerYAML []byte
+
 // Bundled components written into the manifests dir unless disabled.
-var Bundled = map[string][]byte{"traefik": traefikYAML}
+var Bundled = map[string][]byte{"traefik": traefikYAML, "helm-controller": helmControllerYAML}
 
 // WriteBundled writes default component manifests (skipping disabled ones and
 // removing manifests of components that became disabled).

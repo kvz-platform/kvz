@@ -18,10 +18,7 @@ import (
 	"sync"
 
 	"github.com/google/go-containerregistry/pkg/authn"
-	"github.com/google/go-containerregistry/pkg/name"
-	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
-	"github.com/google/go-containerregistry/pkg/v1/remote"
 )
 
 type Image struct {
@@ -42,6 +39,7 @@ type Store struct {
 	mu  sync.Mutex
 	inf map[string]*sync.Mutex
 	mem map[string]*Image
+	reg *Registries
 }
 
 func NewStore(dir string) *Store {
@@ -74,11 +72,7 @@ func (s *Store) Ensure(ref, policy string, kc authn.Keychain) (*Image, error) {
 		}
 		return nil, fmt.Errorf("ErrImageNeverPull: image %s not present and pull policy is Never", ref)
 	case PullAlways:
-		r, err := name.ParseReference(ref)
-		if err != nil {
-			return nil, err
-		}
-		desc, err := remote.Head(r, remote.WithAuthFromKeychain(kc), remote.WithPlatform(v1.Platform{OS: "linux", Architecture: "arm64"}))
+		desc, err := s.head(ref, kc)
 		if err == nil {
 			if im := s.local(ref); im != nil && (im.Digest == desc.Digest.String() || im.IndexDigest == desc.Digest.String()) {
 				return im, nil
@@ -196,11 +190,7 @@ func (s *Store) pull(ref, dir string) (*Image, error) {
 }
 
 func (s *Store) pullAuth(ref, dir string, kc authn.Keychain) (*Image, error) {
-	r, err := name.ParseReference(ref)
-	if err != nil {
-		return nil, err
-	}
-	img, err := remote.Image(r, remote.WithAuthFromKeychain(kc), remote.WithPlatform(v1.Platform{OS: "linux", Architecture: "arm64"}))
+	img, err := s.image(ref, kc)
 	if err != nil {
 		return nil, fmt.Errorf("pull %s: %w", ref, err)
 	}

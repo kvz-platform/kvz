@@ -206,6 +206,25 @@ func (n *Net) Dial(ctx context.Context, addr string) (net.Conn, error) {
 	return n.vn.DialContextTCP(ctx, addr)
 }
 
+// Routable reports whether ip is in the pod network reachable from this node
+// (the local pod CIDR or a remote node's CIDR over the overlay).
+func (n *Net) Routable(ip net.IP) bool {
+	ip4 := ip.To4()
+	if ip4 == nil {
+		return false
+	}
+	if n.Subnet.Contains(ip4) {
+		return true
+	}
+	if n.sw != nil && n.sw.ov != nil {
+		var k [4]byte
+		copy(k[:], ip4)
+		_, remote := n.sw.ov.lookup(k)
+		return remote
+	}
+	return false
+}
+
 // namedConn gives the unnamed socketpair end stable addresses (the switch
 // logs them).
 type namedConn struct{ net.Conn }

@@ -44,6 +44,12 @@ func (n *Net) DebugDump(w io.Writer) {
 			fmt.Fprintln(w, l)
 		}
 		fmt.Fprintf(w, "dropped frames (full NIC queues): %d\n", DroppedFrames())
+		fmt.Fprintf(w, "gateway-MAC source rewrites: %d\n", GatewayMACRewrites())
+	}
+	if v := reflect.ValueOf(n.vn).Elem().FieldByName("networkSwitch"); v.IsValid() {
+		if sw, ok := reflect.NewAt(v.Type(), unsafe.Pointer(v.UnsafeAddr())).Elem().Interface().(interface{ CAM() map[string]int }); ok {
+			fmt.Fprintf(w, "netstack switch CAM (mac -> conn): %v\n", sw.CAM())
+		}
 	}
 	st, err := netstack(n.vn)
 	if err != nil {

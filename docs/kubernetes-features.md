@@ -126,4 +126,4 @@ controller (so `HelmChart` objects install charts). Skip any of them with
 
 kvz passes the full Kubernetes conformance suite:
 `sonobuoy run --mode certified-conformance` on a two-node cluster (two kvz nodes
-on an M5 Max) reports **428 of 428 tests passed** (Kubernetes 1.35.10).
+on an M5 Max) reports **454 of 454 tests passed** (Kubernetes 1.37.2).

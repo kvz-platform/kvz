@@ -67,10 +67,17 @@ Full tables and method: [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
 
 ## Status
 
-kvz is a prototype. It passes the Sonobuoy quick conformance check and runs
-real workloads (Deployments, StatefulSets, Jobs, Services, Ingress, volumes),
-but it's young. Please don't run production on it yet.
+kvz is young. It passes all 428 tests of the Kubernetes certified-conformance
+suite (Sonobuoy, Kubernetes v1.35.10, two nodes) and runs real workloads
+(Deployments, StatefulSets, Jobs, Services, Ingress, volumes, hostNetwork,
+resource limits, HA control planes), but nobody has run it in production yet,
+so please don't run production on it yet.
 
 Found a security problem? Please report it privately, as described in
 [SECURITY.md](SECURITY.md). The brand assets (logos, banners, social images)
 are in [docs/assets/brand-v1](docs/assets/brand-v1).
+
+## License
+
+kvz is licensed under the [Apache License 2.0](LICENSE). Vendored code in
+`third_party/` keeps its own license (Apache 2.0 or MIT), in each directory.

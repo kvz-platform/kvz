@@ -41,16 +41,19 @@
 | `--max-pods` | `1000` | Pod capacity of this node |
 | `--kubelet-port` | `10250` | Port for `logs`, `exec` and metrics |
 | `--overlay-port` | `6446` | Port of the pod network link between nodes |
+| `--verbose` | off | Stream component logs to the terminal instead of `kvz.log` |
 
 ## Files
 
 | Path | Contents |
 |---|---|
 | `~/.kvz/kubeconfig.yaml` | Admin kubeconfig for the cluster |
-| `~/.kvz/kernel/Image` | The pod kernel built by `kernel/build.sh`. If it's missing, kvz uses the one Homebrew installs (`$(brew --prefix)/share/kvz/kernel/Image`). Set `KVZ_KERNEL` to use another. |
+| `~/.kvz/kernel/Image` | The pod kernel built by `kernel/build.sh`, used by source builds. Homebrew and release-tarball installs use the kernel shipped next to the binary (`$(brew --prefix)/share/kvz/kernel/Image`, plus its `config`) instead. Set `KVZ_KERNEL` to use another. |
 | `~/.kvz/server/manifests/` | YAML here is applied automatically, like k3s |
 | `~/.kvz/registries.yaml` | Registry mirrors and credentials (`KVZ_REGISTRIES` overrides the path) |
 | `~/.kvz/server/db/snapshots/` | etcd snapshots |
+| `~/.kvz/kvz.log` | Component logs when kvz runs in a terminal (the previous run's log is `kvz.log.1`) |
+| `~/.kvz/join-token` | The token other Macs join with (`kvz agent --token`) |
 | `~/.kvz/logs/` | Logs from the launchd service |
 | `~/Library/LaunchAgents/dev.kvz.server.plist` | The installed service (or `dev.kvz.agent.plist`) |
 

@@ -15,8 +15,23 @@ of pods. It takes a few minutes.
 brew install kvz-platform/tap/kvz
 ```
 
-This installs a signed and notarized `kvz` and the small Linux kernel that pods
-boot (8.5 MB). Update later with `brew upgrade kvz`.
+This installs `kvz` and the small Linux kernel that pods boot (about 9 MB).
+Update later with `brew upgrade kvz`.
+
+Without Homebrew, download `kvz-<version>-darwin-arm64.tar.gz` from the
+[releases page](https://github.com/kvz-platform/kvz/releases), unpack it and run
+`bin/kvz` from inside it (it finds the kernel in `share/kvz/kernel` next to it):
+
+```sh
+tar -xzf kvz-v1.35.10-1-darwin-arm64.tar.gz
+cd kvz-v1.35.10-1-darwin-arm64
+xattr -dr com.apple.quarantine .   # only if a browser downloaded it
+./bin/kvz server
+```
+
+Early releases are ad-hoc signed rather than notarized, so a browser download
+needs the `xattr` line before macOS will run it. Homebrew and `curl` downloads
+don't.
 
 ## 2. Or build from source
 
@@ -39,16 +54,21 @@ kvz server
 ```
 
 kvz starts etcd, the API server, the scheduler, the controllers and a local
-node, all in this one process. When it's ready it prints two things:
+node, all in this one process. When it's ready it prints:
 
 ```
 kvz server ready in 1.7s
   export KUBECONFIG=/Users/you/.kvz/kubeconfig.yaml
-  join: kvz agent --server https://192.168.1.20:6443 --token K10…::…
+  join: kvz agent --server https://192.168.1.20:6443 --token <token in /Users/you/.kvz/join-token>
+  logs: /Users/you/.kvz/kvz.log (--verbose to stream them here)
 ```
 
 Copy the `export` line into another terminal. The `join` line is for adding
-more Macs later.
+more Macs later. It doesn't show the join token itself, so the output is safe
+to share; the token is in the file it names. The Kubernetes components log to
+`kvz.log` rather than the terminal; run `kvz server --verbose` to see them
+live. (When kvz runs as a service, or its output goes to a file or pipe, the
+full logs go to that output as usual.)
 
 ## 4. Run a Linux pod
 
@@ -116,7 +136,8 @@ macOS allows two macOS VMs per Mac. Extra macOS pods wait with the reason
 
 ## 7. Add more Macs
 
-On each extra Mac, install kvz and run the `join` command the server printed:
+On each extra Mac, install kvz and run the `join` command the server printed,
+with the token from the server's `~/.kvz/join-token`:
 
 ```sh
 kvz agent --server https://192.168.1.20:6443 --token K10…::…

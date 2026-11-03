@@ -88,12 +88,10 @@ func DefaultKernel() string {
 	if k := os.Getenv("KVZ_KERNEL"); k != "" {
 		return k
 	}
-	home, _ := os.UserHomeDir()
-	if p := filepath.Join(home, ".kvz", "kernel", "Image"); exists(p) {
-		return p
-	}
-	// Packaged installs (Homebrew) ship the kernel at <prefix>/share/kvz/kernel/Image
-	// next to <prefix>/bin/kvz.
+	// Packaged installs (Homebrew, release tarballs) ship the kernel that
+	// matches the binary at <prefix>/share/kvz/kernel/Image, next to
+	// <prefix>/bin/kvz. It wins over ~/.kvz/kernel so upgrades get the new
+	// kernel; source builds have no such directory and use ~/.kvz/kernel.
 	if exe, err := os.Executable(); err == nil {
 		if real, err := filepath.EvalSymlinks(exe); err == nil {
 			exe = real
@@ -101,6 +99,10 @@ func DefaultKernel() string {
 		if p := filepath.Join(filepath.Dir(exe), "..", "share", "kvz", "kernel", "Image"); exists(p) {
 			return filepath.Clean(p)
 		}
+	}
+	home, _ := os.UserHomeDir()
+	if p := filepath.Join(home, ".kvz", "kernel", "Image"); exists(p) {
+		return p
 	}
 	return filepath.Join(home, "Library", "Application Support", "com.apple.container", "kernels", "default.kernel-arm64")
 }

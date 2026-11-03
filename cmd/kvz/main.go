@@ -48,6 +48,7 @@ func main() {
 	}
 	root := &cobra.Command{Use: "kvz", Short: "Native-macOS Kubernetes (k3s-style, single binary)", SilenceUsage: true}
 	root.AddCommand(serverCmd(), agentCmd(), versionCmd(), kubectlCmd(), installCmd(), uninstallCmd(), snapshotCmd())
+	root.SetErr(termWriter{})
 	if err := root.Execute(); err != nil {
 		os.Exit(1)
 	}
@@ -113,6 +114,7 @@ func hostname() string {
 
 type nodeFlags struct {
 	name, nodeIP, dataDir, defRuntime string
+	verbose                           bool
 	backends                          []string
 	kubeletPort, maxPods, overlayPort int
 }
@@ -127,6 +129,7 @@ func (nf *nodeFlags) add(c *cobra.Command, defDir string) {
 	f.IntVar(&nf.kubeletPort, "kubelet-port", 10250, "kubelet API port")
 	f.IntVar(&nf.maxPods, "max-pods", 1000, "pod capacity")
 	f.IntVar(&nf.overlayPort, "overlay-port", 6446, "cross-node pod network port")
+	f.BoolVar(&nf.verbose, "verbose", false, "stream component logs to the terminal instead of <data-dir>/kvz.log")
 }
 
 func serverCmd() *cobra.Command {
@@ -150,6 +153,7 @@ func serverCmd() *cobra.Command {
 			ctx, cancel := signalCtx()
 			defer cancel()
 			t0 := time.Now()
+			logPath := quietLogs(nf.dataDir, nf.verbose)
 			if os.Getenv("KVZ_ETCD_SYNC") == "" {
 				os.Setenv("KVZ_ETCD_SYNC", etcdSync)
 			}
@@ -276,9 +280,12 @@ func serverCmd() *cobra.Command {
 				errc <- join.Serve(fmt.Sprintf(":%d", apiPort+1), secret, cp.CA,
 					filepath.Join(cp.CA.Dir, "apiserver.crt"), filepath.Join(cp.CA.Dir, "apiserver.key"), cidrs, sj)
 			}()
-			fmt.Fprintf(os.Stderr, "\nkvz server ready in %s\n  export KUBECONFIG=%s\n  join: kvz agent --server https://%s:%d --token %s\n\n",
-				time.Since(t0).Round(time.Millisecond), ext, nf.nodeIP, apiPort, token)
-			_ = os.WriteFile(filepath.Join(nf.dataDir, "join-token"), []byte(token+"\n"), 0o600)
+			// The token is a cluster credential: print where it is, not the token,
+			// so the banner is safe to screen-share or paste into an issue.
+			tokenFile := filepath.Join(nf.dataDir, "join-token")
+			_ = os.WriteFile(tokenFile, []byte(token+"\n"), 0o600)
+			fmt.Fprintf(termOut, "\nkvz server ready in %s\n  export KUBECONFIG=%s\n  join: kvz agent --server https://%s:%d --token <token in %s>\n%s\n",
+				time.Since(t0).Round(time.Millisecond), ext, nf.nodeIP, apiPort, tokenFile, logsHint(logPath))
 			if !disableAgent {
 				crt, key, err := cp.CA.Issue("node-"+nf.name, "system:node:"+nf.name, []string{"system:nodes"}, []string{nf.name}, []net.IP{net.ParseIP(nf.nodeIP)}, true)
 				if err != nil {
@@ -334,6 +341,7 @@ func agentCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx, cancel := signalCtx()
 			defer cancel()
+			logPath := quietLogs(nf.dataDir, nf.verbose)
 			u := strings.TrimSuffix(server, "/")
 			host, port, err := net.SplitHostPort(strings.TrimPrefix(u, "https://"))
 			if err != nil {
@@ -365,6 +373,7 @@ func agentCmd() *cobra.Command {
 			if lcs, err := adminClient(kc); err == nil {
 				go apiLB.Watch(ctx, lcs)
 			}
+			fmt.Fprintf(termOut, "\nkvz agent joined %s as node %s (pod CIDR %s)\n%s\n", server, nf.name, b.PodCIDR, logsHint(logPath))
 			return node.Run(ctx, node.Options{Name: nf.name, Kubeconfig: kc, DataDir: dir, NodeIP: nf.nodeIP,
 				ListenPort: nf.kubeletPort, ServingCert: crt, ServingKey: key, ClientCA: ca,
 				DefaultHandler: nf.defRuntime, MaxPods: nf.maxPods, Backends: nf.backends,

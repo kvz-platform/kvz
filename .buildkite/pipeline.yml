@@ -71,7 +71,7 @@ steps:
     if: build.tag =~ /^v[0-9]+\.[0-9]+\.[0-9]+-[0-9]+$$/
     command:
       - OUT=$PWD/dist/kernel kernel/build.sh
-    artifact_paths: dist/kernel/Image
+    artifact_paths: "dist/kernel/Image;dist/kernel/config"
 
   - label: ":apple: Build, sign and notarize"
     key: release-build
@@ -95,6 +95,7 @@ steps:
     command:
       - buildkite-agent artifact download "bin/kvz" .
       - buildkite-agent artifact download "dist/kernel/Image" .
+      - buildkite-agent artifact download "dist/kernel/config" .
       - chmod +x bin/kvz
       - KVZ_KERNEL_IMAGE=dist/kernel/Image hack/release/package.sh $BUILDKITE_TAG
       - export GITHUB_TOKEN="$(buildkite-agent secret get GITHUB_TOKEN)"

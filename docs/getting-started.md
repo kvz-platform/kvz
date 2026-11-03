@@ -146,6 +146,9 @@ kvz agent --server https://192.168.1.20:6443 --token K10…::…
 The new Mac shows up in `kubectl get nodes`, and pods spread across all of
 them. Pods on different Macs can reach each other and use the same Services.
 
+For more than a couple of Macs (headless Mac minis, high availability, ports,
+automatic login, verification), follow [Fleet setup](fleet.md).
+
 ## 8. Run kvz in the background
 
 To keep kvz running after you close the terminal, and start it at login:

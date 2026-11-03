@@ -68,6 +68,21 @@ hack/release/next-version.sh
 hack/release/notes.sh "$(hack/release/next-version.sh)"
 ```
 
+## Docs for AI agents
+
+[kvz.systems/llms.txt](https://kvz.systems/llms.txt) is the entry point for AI
+agents (it lives in [kvz-platform/kvz.systems](https://github.com/kvz-platform/kvz.systems)).
+It links to the raw Markdown docs on `main`, so it stays current on its own,
+except for `llms-full.txt`, a single-file copy of the docs. Regenerate it when
+the docs change, and on every release:
+
+```sh
+hack/llms-full.sh ../kvz.systems/llms-full.txt
+```
+
+Then commit it in the kvz.systems repo. If you add, rename or remove a doc,
+update the links in `llms.txt` and the file list in `hack/llms-full.sh`.
+
 ## Buildkite setup
 
 ### Pipeline

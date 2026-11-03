@@ -62,6 +62,7 @@ Full tables and method: [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
 | Guide | What's in it |
 |---|---|
 | [Getting started](docs/getting-started.md) | Install, run your first pods, add Macs, run as a service |
+| [Fleet setup](docs/fleet.md) | Turn several Macs (a shelf of Mac minis) into one cluster, step by step; written so an AI agent can follow it too |
 | [Runtimes](docs/runtimes.md) | Linux, macOS and native pods: how each works and when to use it |
 | [Kubernetes features](docs/kubernetes-features.md) | What works today, and the known limits |
 | [Operations](docs/operations.md) | Flags, files, snapshots, upgrades and uninstalling |

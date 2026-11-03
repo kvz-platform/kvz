@@ -23,7 +23,7 @@ require (
 	golang.org/x/crypto v0.58.0
 	golang.org/x/sys v0.49.0
 	golang.org/x/term v0.47.0
-	golang.org/x/time v0.15.0
+	golang.org/x/time v0.16.0
 	gvisor.dev/gvisor v0.0.0-20240916094835-a174eb65023f
 	k8s.io/api v0.37.2
 	k8s.io/apimachinery v0.37.2

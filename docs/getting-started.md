@@ -15,8 +15,23 @@ of pods. It takes a few minutes.
 brew install kvz-platform/tap/kvz
 ```
 
-This installs a signed and notarized `kvz` and the small Linux kernel that pods
-boot (8.5 MB). Update later with `brew upgrade kvz`.
+This installs `kvz` and the small Linux kernel that pods boot (about 9 MB).
+Update later with `brew upgrade kvz`.
+
+Without Homebrew, download `kvz-<version>-darwin-arm64.tar.gz` from the
+[releases page](https://github.com/kvz-platform/kvz/releases), unpack it and run
+`bin/kvz` from inside it (it finds the kernel in `share/kvz/kernel` next to it):
+
+```sh
+tar -xzf kvz-v1.35.10-1-darwin-arm64.tar.gz
+cd kvz-v1.35.10-1-darwin-arm64
+xattr -dr com.apple.quarantine .   # only if a browser downloaded it
+./bin/kvz server
+```
+
+Early releases are ad-hoc signed rather than notarized, so a browser download
+needs the `xattr` line before macOS will run it. Homebrew and `curl` downloads
+don't.
 
 ## 2. Or build from source
 

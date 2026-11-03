@@ -12,7 +12,8 @@ class Kvz < Formula
 
   def install
     bin.install "bin/kvz"
-    (share/"kvz/kernel").install "share/kvz/kernel/Image"
+    # config is the kernel's .config: kvz reads it to turn on CPU hotplug and cgroup limits
+    (share/"kvz/kernel").install "share/kvz/kernel/Image", "share/kvz/kernel/config"
   end
 
   def caveats

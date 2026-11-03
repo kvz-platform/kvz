@@ -45,6 +45,22 @@ and kvz never publishes a bare `v1.35.10`, so this doesn't come up in practice.
 
 Users then get it with `brew upgrade kvz`.
 
+### Without Buildkite
+
+Until release agents and the Apple secrets are set up, a maintainer can cut a
+release from a Mac with the same scripts. The binary is then ad-hoc signed (as
+`make build` does) instead of notarized:
+
+```sh
+git checkout main && git pull
+tag=$(hack/release/next-version.sh)
+git tag -a "$tag" -m "kvz $tag" && git push origin "$tag"
+make build KVZ_VERSION="$tag"
+hack/release/package.sh "$tag"           # uses ~/.kvz/kernel/Image and its config
+hack/release/publish.sh "$tag"           # needs gh logged in
+HOMEBREW_TAP_TOKEN=$(gh auth token) hack/release/update-tap.sh "$tag"
+```
+
 To preview the next version and its notes locally:
 
 ```sh
@@ -119,6 +135,7 @@ secrets. Pull request builds never do.
 change the template in this repo, not the formula in the tap.
 
 The formula installs a prebuilt, signed and notarized binary, plus the pod
-kernel at `share/kvz/kernel/Image`. kvz finds the kernel there on its own.
+kernel at `share/kvz/kernel/Image` with its `config`. kvz finds the kernel there
+on its own and prefers it over `~/.kvz/kernel`.
 Release assets must be publicly downloadable for `brew install` to work, which
 means the `kvz` repository has to be public.

@@ -16,6 +16,12 @@ underneath. Your pods run as:
 
 You use it with the same `kubectl` and YAML you already know.
 
+## Demo
+
+<a href="https://youtu.be/GUZCElkfb1U">
+  <img alt="Watch the kvz demo on YouTube" src="docs/assets/kvz-demo-video-v1.png" width="100%">
+</a>
+
 ## Quick start
 
 You need an Apple Silicon Mac running macOS 26 or later.

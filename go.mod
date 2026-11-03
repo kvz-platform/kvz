@@ -5,7 +5,7 @@ go 1.27.3
 require (
 	github.com/Code-Hex/vz/v3 v3.7.1
 	github.com/containers/gvisor-tap-vsock v0.8.7
-	github.com/creack/pty v1.1.18
+	github.com/creack/pty v1.1.24
 	github.com/google/go-containerregistry v0.20.6
 	github.com/google/nftables v0.3.0
 	github.com/miekg/dns v1.1.68

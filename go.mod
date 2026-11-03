@@ -8,7 +8,7 @@ require (
 	github.com/creack/pty v1.1.18
 	github.com/google/go-containerregistry v0.20.6
 	github.com/google/nftables v0.3.0
-	github.com/miekg/dns v1.1.68
+	github.com/miekg/dns v1.1.73
 	github.com/prometheus/client_model v0.6.2
 	github.com/shirou/gopsutil/v4 v4.26.10
 	github.com/spf13/cobra v1.10.2

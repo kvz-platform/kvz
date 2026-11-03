@@ -3,7 +3,7 @@
 # Every step runs on Apple Silicon Macs (queue "macos"): kvz is darwin-only and
 # its tests boot real VMs with Virtualization.framework, which cloud CI can't
 # nest. Branch and PR builds run checks and end-to-end tests. Builds of a
-# release tag (v1.35.10-12) build, sign, notarize, publish and update Homebrew.
+# release tag (v1.37.2-12) build, sign, notarize, publish and update Homebrew.
 
 agents:
   queue: macos

@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
@@ -138,9 +139,10 @@ func (s *Store) pullLocked(ref string, kc authn.Keychain, digest string) (*Image
 	}
 	im.IndexDigest = digest
 	b, _ := json.MarshalIndent(im, "", " ")
-	_ = os.WriteFile(filepath.Join(s.dir, dirName, "image.json"), b, 0o644)
+	// Other kvz processes may read these at any moment: replace, don't rewrite.
+	_ = writeAtomic(filepath.Join(s.dir, dirName, "image.json"), b)
 	_ = os.MkdirAll(filepath.Join(s.dir, "refs"), 0o755)
-	_ = os.WriteFile(filepath.Join(s.dir, "refs", key(ref)), []byte(dirName), 0o644)
+	_ = writeAtomic(filepath.Join(s.dir, "refs", key(ref)), []byte(dirName))
 	s.mu.Lock()
 	s.mem[ref] = im
 	s.mu.Unlock()
@@ -192,7 +194,24 @@ func (s *Store) pull(ref, dir string) (*Image, error) {
 	return s.pullAuth(ref, dir, authn.DefaultKeychain)
 }
 
+// pullAuth downloads ref and unpacks it into dir. Several kvz processes can
+// share one store (a server and an agent on the same Mac, or two data dirs),
+// so the per-process locks aren't enough: a file lock serializes pulls of the
+// same dir across processes, each pull unpacks into its own temp dir, and a
+// complete dir (one with image.json) is never replaced, because running pod
+// VMs may have it mounted.
 func (s *Store) pullAuth(ref, dir string, kc authn.Keychain) (*Image, error) {
+	if err := os.MkdirAll(filepath.Dir(dir), 0o755); err != nil {
+		return nil, err
+	}
+	unlock, err := lockFile(dir + ".lock")
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
+	if im := readImage(dir); im != nil {
+		return im, nil // another process finished this pull while we waited
+	}
 	img, err := s.image(ref, kc)
 	if err != nil {
 		return nil, fmt.Errorf("pull %s: %w", ref, err)
@@ -202,8 +221,11 @@ func (s *Store) pullAuth(ref, dir string, kc authn.Keychain) (*Image, error) {
 		return nil, err
 	}
 	dg, _ := img.Digest()
-	tmp := dir + ".tmp"
-	_ = os.RemoveAll(tmp)
+	tmp, err := os.MkdirTemp(filepath.Dir(dir), filepath.Base(dir)+".tmp-")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(tmp) // no-op once renamed into place
 	root := filepath.Join(tmp, "rootfs")
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		return nil, err
@@ -212,7 +234,7 @@ func (s *Store) pullAuth(ref, dir string, kc authn.Keychain) (*Image, error) {
 	err = untar(rc, root)
 	rc.Close()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("unpack %s: %w", ref, err)
 	}
 	im := &Image{Ref: ref, Digest: dg.String(), Tag: "img" + key(dir), Rootfs: filepath.Join(dir, "rootfs"),
 		Entrypoint: cf.Config.Entrypoint, Cmd: cf.Config.Cmd, Env: cf.Config.Env, WorkingDir: cf.Config.WorkingDir, User: cf.Config.User}
@@ -220,8 +242,57 @@ func (s *Store) pullAuth(ref, dir string, kc authn.Keychain) (*Image, error) {
 	if err := os.WriteFile(filepath.Join(tmp, "image.json"), b, 0o644); err != nil {
 		return nil, err
 	}
+	// dir can only exist here without image.json: a pull that crashed before
+	// this change. Nothing can be using it, so replace it.
 	_ = os.RemoveAll(dir)
 	return im, os.Rename(tmp, dir)
+}
+
+// readImage returns the image unpacked in dir, or nil if dir is missing or
+// incomplete (image.json is written last).
+func readImage(dir string) *Image {
+	b, err := os.ReadFile(filepath.Join(dir, "image.json"))
+	if err != nil {
+		return nil
+	}
+	var im Image
+	if json.Unmarshal(b, &im) != nil {
+		return nil
+	}
+	return &im
+}
+
+// writeAtomic replaces path with data so readers see the old or the new
+// contents, never a partial file.
+func writeAtomic(path string, data []byte) error {
+	f, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*")
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(data); err != nil {
+		f.Close()
+		os.Remove(f.Name())
+		return err
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(f.Name())
+		return err
+	}
+	_ = os.Chmod(f.Name(), 0o644)
+	return os.Rename(f.Name(), path)
+}
+
+// lockFile takes an exclusive flock on path, waiting for other processes.
+func lockFile(path string) (func(), error) {
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		return nil, err
+	}
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+		f.Close()
+		return nil, err
+	}
+	return func() { _ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN); f.Close() }, nil
 }
 
 func untar(r io.Reader, root string) error {

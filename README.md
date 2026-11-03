@@ -73,8 +73,8 @@ Full tables and method: [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
 
 ## Status
 
-kvz is young. It passes all 428 tests of the Kubernetes certified-conformance
-suite (Sonobuoy, Kubernetes v1.35.10, two nodes) and runs real workloads
+kvz is young. It passes all 454 tests of the Kubernetes certified-conformance
+suite (Sonobuoy, Kubernetes v1.37.2, two nodes) and runs real workloads
 (Deployments, StatefulSets, Jobs, Services, Ingress, volumes, hostNetwork,
 resource limits, HA control planes), but nobody has run it in production yet,
 so please don't run production on it yet.

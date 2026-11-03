@@ -136,9 +136,13 @@ func New(dataDir, hostIP string, t *rt.Tracker, vols *volumes.Materializer, pn *
 		return nil, err
 	}
 	kernel := DefaultKernel()
-	return &Backend{hostIP: hostIP, dir: filepath.Join(dataDir, "mvm"), kernel: kernel, kernelHotplug: kernelHasHotplug(kernel), kernelCgroups: kernelHas(kernel, "CONFIG_CFS_BANDWIDTH", "CONFIG_MEMCG"), initrd: initrd, t: t, vols: vols,
+	b := &Backend{hostIP: hostIP, dir: filepath.Join(dataDir, "mvm"), kernel: kernel, kernelHotplug: kernelHasHotplug(kernel), kernelCgroups: kernelHas(kernel, "CONFIG_CFS_BANDWIDTH", "CONFIG_MEMCG"), initrd: initrd, t: t, vols: vols,
 		images: store, pnet: pn, dns: []string{"10.43.0.10"},
-		pods: map[string]*pod{}, pre: map[string]net.IP{}, slots: make(chan struct{}, maxVMs)}, nil
+		pods: map[string]*pod{}, pre: map[string]net.IP{}, slots: make(chan struct{}, maxVMs)}
+	if vols != nil && vols.Images == nil {
+		vols.Images = b.imageVolume
+	}
+	return b, nil
 }
 
 func (b *Backend) Handler() string { return "linux" }
@@ -457,6 +461,14 @@ func (b *Backend) buildSpec(p *corev1.Pod, ps *pod) (*spec, []microvm.Share, err
 			}
 			if rel, err := filepath.Rel(ps.dir, host); err == nil && !strings.HasPrefix(rel, "..") {
 				sp.Mounts = append(sp.Mounts, mspec{Container: cname, Sub: rel, Path: guest, ReadOnly: ro})
+			} else if rel, err := filepath.Rel(b.images.Dir(), host); err == nil && !strings.HasPrefix(rel, "..") {
+				// an image volume: a directory in the image store, which is
+				// already one read-only share
+				if !seen[imagesTag] {
+					shares = append(shares, microvm.Share{Tag: imagesTag, Path: b.images.Dir(), ReadOnly: true})
+					seen[imagesTag] = true
+				}
+				sp.Mounts = append(sp.Mounts, mspec{Container: cname, Tag: imagesTag, Sub: filepath.ToSlash(rel), Path: guest, ReadOnly: true})
 			} else {
 				tag := fmt.Sprintf("hp%d", hp)
 				hp++

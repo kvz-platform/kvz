@@ -129,6 +129,12 @@ Upgrading kvz upgrades the embedded etcd too, and etcd can't move a data
 directory back to an older version. Take a snapshot before upgrading
 (`kvz etcd-snapshot save`) if you might roll back.
 
+With several Macs, upgrade the servers first, then the agents, and don't leave
+them on different kvz versions longer than you need to (mixed versions aren't
+tested). Going from kvz on Kubernetes 1.35 straight to 1.37
+was tested on a running two-node cluster; existing objects and nodes carried
+over.
+
 ## Joining Macs securely
 
 The join token looks like `K10<hash>::<secret>`, the same format as k3s. The

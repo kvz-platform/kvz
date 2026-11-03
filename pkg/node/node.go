@@ -47,9 +47,12 @@ import (
 	"github.com/GrowlyX/kvz/pkg/runtime/microvmrt"
 	"github.com/GrowlyX/kvz/pkg/runtime/process"
 	"github.com/GrowlyX/kvz/pkg/runtime/volumes"
+	"github.com/GrowlyX/kvz/pkg/version"
+	"k8s.io/kubernetes/pkg/kubelet/clustertrustbundle"
+	"k8s.io/kubernetes/pkg/kubelet/podcertificate"
 )
 
-const Version = "v1.35.10+kvz"
+const Version = version.Kubelet
 
 type Options struct {
 	Name           string
@@ -78,6 +81,7 @@ type Provider struct {
 	def      string
 	hostIP   string
 	handler  map[string]string // pod key -> handler
+	podCerts podcertificate.Manager
 }
 
 func (p *Provider) backendFor(pod *corev1.Pod) (rt.Backend, error) {
@@ -111,6 +115,9 @@ func (p *Provider) CreatePod(ctx context.Context, pod *corev1.Pod) error {
 		return nil
 	}
 	p.t.Put(pod)
+	if p.podCerts != nil {
+		p.podCerts.TrackPod(ctx, pod) // request podCertificate volume credentials
+	}
 	return b.Start(ctx, pod)
 }
 
@@ -218,6 +225,9 @@ func (p *Provider) DeletePod(ctx context.Context, pod *corev1.Pod) error {
 		return nil
 	}
 	err = b.Stop(ctx, pod)
+	if p.podCerts != nil {
+		p.podCerts.ForgetPod(ctx, pod)
+	}
 	// Report the terminal status, then forget the pod. Like the kubelet, a
 	// deleted pod ends Succeeded only if every container exited 0.
 	p.t.Update(pod.Namespace, pod.Name, func(s *corev1.PodStatus) {
@@ -482,7 +492,12 @@ func Run(ctx context.Context, o Options) error {
 	}
 	t := rt.NewTracker()
 	vols := &volumes.Materializer{ConfigMaps: pc.ConfigMaps, Secrets: pc.Secrets, Client: cs}
-	p := &Provider{nodeName: o.Name, started: metav1.Now(), t: t, backends: map[string]rt.Backend{}, def: o.DefaultHandler, hostIP: o.NodeIP}
+	// clusterTrustBundle and podCertificate projected volumes use the kubelet's
+	// own managers, wired as in pkg/kubelet.
+	vols.TrustBundles = clustertrustbundle.NewLazyInformerManager(ctx, cs, 2*o.MaxPods)
+	podCerts := startPodCertificates(ctx, cs, o.Name, t)
+	vols.PodCerts = podCerts
+	p := &Provider{nodeName: o.Name, started: metav1.Now(), t: t, backends: map[string]rt.Backend{}, def: o.DefaultHandler, hostIP: o.NodeIP, podCerts: podCerts}
 	cidr := o.PodCIDR
 	if cidr == "" {
 		cidr = os.Getenv("KVZ_POD_CIDR")

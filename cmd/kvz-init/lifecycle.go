@@ -165,7 +165,7 @@ func probeOnce(c Container, p *Probe) bool {
 		for k, v := range p.HTTPHeaders {
 			req.Header.Set(k, v)
 		}
-		req.Header.Set("User-Agent", "kube-probe/1.35")
+		req.Header.Set("User-Agent", "kube-probe/1.37")
 		cl := &http.Client{Timeout: timeout, Transport: insecureTransport}
 		resp, err := cl.Do(req)
 		if err != nil {

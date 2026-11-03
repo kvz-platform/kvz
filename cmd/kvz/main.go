@@ -39,6 +39,7 @@ import (
 	"github.com/GrowlyX/kvz/pkg/node"
 	"github.com/GrowlyX/kvz/pkg/pki"
 	"github.com/GrowlyX/kvz/pkg/storage"
+	"github.com/GrowlyX/kvz/pkg/upgrade"
 	aggclient "k8s.io/kube-aggregator/pkg/client/clientset_generated/clientset"
 )
 
@@ -49,9 +50,42 @@ func main() {
 	root := &cobra.Command{Use: "kvz", Short: "Native-macOS Kubernetes (k3s-style, single binary)", SilenceUsage: true}
 	root.AddCommand(serverCmd(), agentCmd(), versionCmd(), kubectlCmd(), installCmd(), uninstallCmd(), snapshotCmd())
 	root.SetErr(termWriter{})
-	if err := root.Execute(); err != nil {
+	if len(os.Args) > 1 && (os.Args[1] == "server" || os.Args[1] == "agent") {
+		upgrade.WaitForPredecessor()
+		// A binary installed by an automated upgrade that keeps failing to
+		// start is rolled back here (see pkg/upgrade).
+		if prev, err := upgrade.BootCheck(argDataDir()); err != nil {
+			fmt.Fprintln(os.Stderr, "kvz: upgrade boot check:", err)
+		} else if prev != "" {
+			fmt.Fprintln(os.Stderr, "kvz: new release failed to start; rolling back to", prev)
+			upgrade.Restart(prev)
+		}
+	}
+	err := root.Execute()
+	if bin := upgrade.RestartRequested(); bin != "" {
+		// The node agent installed a new release: restart into it, with the
+		// terminal (if any) back on stderr so its banner shows there.
+		if termOut != os.Stderr {
+			_ = syscall.Dup2(int(termOut.Fd()), int(os.Stderr.Fd()))
+		}
+		upgrade.Restart(bin)
+	}
+	if err != nil {
 		os.Exit(1)
 	}
+}
+
+// argDataDir finds --data-dir in the command line before flags are parsed.
+func argDataDir() string {
+	for i, a := range os.Args {
+		if a == "--data-dir" && i+1 < len(os.Args) {
+			return os.Args[i+1]
+		} else if v, ok := strings.CutPrefix(a, "--data-dir="); ok {
+			return v
+		}
+	}
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".kvz")
 }
 
 // kubectlCmd embeds a version-matched kubectl (like `k3s kubectl`), defaulting
@@ -237,6 +271,9 @@ func serverCmd() *cobra.Command {
 			}
 			if cfg, err := clientcmd.BuildConfigFromFlags("", cp.AdminKubeconfig); err == nil {
 				go deploy.Run(ctx, cfg, manifests)
+				if !disabled["upgrade-controller"] {
+					go upgrade.Run(ctx, cfg, nf.name)
+				}
 			}
 			if adm, err := adminClient(cp.AdminKubeconfig); err == nil {
 				if !disabled["local-storage"] {
@@ -301,6 +338,10 @@ func serverCmd() *cobra.Command {
 						ClientCA: filepath.Join(cp.CA.Dir, "ca.crt"), DefaultHandler: nf.defRuntime, MaxPods: nf.maxPods, Backends: nf.backends,
 						PodCIDR: localCIDR, OverlaySecret: join.OverlaySecret(token), OverlayPort: nf.overlayPort})
 				}()
+				go upgrade.MarkControlPlane(ctx, adm, nf.name)
+				if ncs, err := adminClient(kc); err == nil {
+					go upgrade.RunAgent(ctx, ncs, nf.name, nf.dataDir)
+				}
 			}
 			select {
 			case <-ctx.Done():
@@ -325,7 +366,7 @@ func serverCmd() *cobra.Command {
 	c.Flags().StringVar(&restorePath, "cluster-reset-restore-path", "", "restore the datastore from this etcd snapshot before starting")
 	c.Flags().DurationVar(&snapInterval, "etcd-snapshot-interval", 12*time.Hour, "automatic etcd snapshot interval (0 disables)")
 	c.Flags().IntVar(&snapRetention, "etcd-snapshot-retention", 5, "number of automatic snapshots to keep")
-	c.Flags().StringSliceVar(&disable, "disable", nil, "bundled components to skip: traefik, helm-controller, local-storage, metrics-server")
+	c.Flags().StringSliceVar(&disable, "disable", nil, "bundled components to skip: traefik, helm-controller, local-storage, metrics-server, upgrade-controller")
 	c.Flags().StringVar(&etcdSync, "etcd-sync", "barrier", "etcd WAL sync on macOS: full (F_FULLFSYNC), barrier (F_BARRIERFSYNC, crash-consistent), none")
 	c.Flags().StringSliceVar(&sans, "tls-san", nil, "extra apiserver SANs")
 	return c
@@ -372,6 +413,9 @@ func agentCmd() *cobra.Command {
 			}
 			if lcs, err := adminClient(kc); err == nil {
 				go apiLB.Watch(ctx, lcs)
+			}
+			if ncs, err := adminClient(kc); err == nil {
+				go upgrade.RunAgent(ctx, ncs, nf.name, nf.dataDir)
 			}
 			fmt.Fprintf(termOut, "\nkvz agent joined %s as node %s (pod CIDR %s)\n%s\n", server, nf.name, b.PodCIDR, logsHint(logPath))
 			return node.Run(ctx, node.Options{Name: nf.name, Kubeconfig: kc, DataDir: dir, NodeIP: nf.nodeIP,

@@ -19,7 +19,7 @@
 | `--https-listen-port` | `6443` | API server port. The join endpoint uses the next port. |
 | `--etcd-port` | `2379` | Embedded etcd client port |
 | `--disable-agent` | off | Run only the control plane, with no local node |
-| `--disable` | none | Skip bundled add-ons: `traefik`, `helm-controller`, `local-storage`, `metrics-server` |
+| `--disable` | none | Skip bundled add-ons: `traefik`, `helm-controller`, `local-storage`, `metrics-server`, `upgrade-controller` |
 | `--etcd-sync` | `barrier` | How etcd flushes writes: `full`, `barrier` (crash-consistent) or `none` |
 | `--etcd-snapshot-interval` | `12h` | How often to take automatic snapshots. `0` turns them off. |
 | `--etcd-snapshot-retention` | `5` | How many automatic snapshots to keep |
@@ -55,6 +55,7 @@
 | `~/.kvz/kvz.log` | Component logs when kvz runs in a terminal (the previous run's log is `kvz.log.1`) |
 | `~/.kvz/join-token` | The token other Macs join with (`kvz agent --token`) |
 | `~/.kvz/logs/` | Logs from the launchd service |
+| `~/.kvz/upgrade/state.json` | An automated upgrade that hasn't been confirmed yet, or the release that was rolled back |
 | `~/Library/LaunchAgents/dev.kvz.server.plist` | The installed service (or `dev.kvz.agent.plist`) |
 
 ## Backups and restores
@@ -124,6 +125,11 @@ kvz kubectl get --raw "/api/v1/nodes/<node>/proxy/debug/pprof/goroutine?debug=2"
 ```
 
 ## Upgrades
+
+To upgrade a whole cluster, apply an `upgrade.cattle.io/v1` Plan, the same API
+as the k3s system-upgrade-controller. kvz cordons, drains and upgrades each Mac
+in turn, control plane first, and rolls a node back if the new release doesn't
+start. See [upgrades.md](upgrades.md).
 
 Upgrading kvz upgrades the embedded etcd too, and etcd can't move a data
 directory back to an older version. Take a snapshot before upgrading

@@ -1,6 +1,6 @@
 # Kubernetes features
 
-kvz runs upstream Kubernetes 1.35 (kube-apiserver, controller-manager and
+kvz runs upstream Kubernetes 1.37 (kube-apiserver, controller-manager and
 scheduler, unmodified) with embedded etcd 3.7. It is tested with the full
 Sonobuoy certified-conformance suite on a two-node cluster; see
 [Conformance](#conformance). This page lists what works today and the known

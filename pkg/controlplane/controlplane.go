@@ -336,7 +336,7 @@ func (cp *ControlPlane) Run(ctx context.Context, ready chan<- struct{}) error {
 			"--secure-port=0",
 			"--cluster-cidr=" + cp.Cfg.ClusterCIDR,
 			"--allocate-node-cidrs=false",
-			"--controllers=*,-nodeipam,-route,-service,-cloud-node-lifecycle,-attachdetach,-persistentvolume-expander",
+			"--controllers=*,-nodeipam,-attachdetach,-persistentvolume-expander", // route, service, cloud-node-lifecycle left kube-controller-manager in 1.37
 			"--kube-api-qps=200", "--kube-api-burst=400",
 			"--concurrent-deployment-syncs=10", "--concurrent-replicaset-syncs=10",
 			"--leader-elect-lease-duration=8s", "--leader-elect-renew-deadline=6s", "--leader-elect-retry-period=1s",

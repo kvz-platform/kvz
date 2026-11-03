@@ -12,6 +12,6 @@ updates:
       etcd:
         patterns: ["go.etcd.io/*"]
     ignore:
-      # minor Kubernetes bumps change the release line (v1.35 -> v1.36); do them by hand
+      # minor Kubernetes bumps change the release line (v1.37 -> v1.38); do them by hand
       - dependency-name: "k8s.io/*"
         update-types: ["version-update:semver-minor", "version-update:semver-major"]

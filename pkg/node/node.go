@@ -47,9 +47,10 @@ import (
 	"github.com/GrowlyX/kvz/pkg/runtime/microvmrt"
 	"github.com/GrowlyX/kvz/pkg/runtime/process"
 	"github.com/GrowlyX/kvz/pkg/runtime/volumes"
+	"github.com/GrowlyX/kvz/pkg/version"
 )
 
-const Version = "v1.35.10+kvz"
+const Version = version.Kubelet
 
 type Options struct {
 	Name           string

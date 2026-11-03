@@ -6,25 +6,25 @@ A kvz release is named after the Kubernetes version it embeds, plus a release
 number:
 
 ```
-v1.35.10-12
+v1.37.2-12
 └──┬───┘ └┬┘
    │      └─ release number: one higher than the last release, never resets
    └──────── the upstream Kubernetes version inside (K8S_VERSION in the Makefile)
 ```
 
-- **Upgrading Kubernetes** changes the first part: `v1.35.10-12` is followed by
-  `v1.35.11-13`.
-- **A kvz-only fix** changes only the number: `v1.35.10-12` is followed by
-  `v1.35.10-13`.
+- **Upgrading Kubernetes** changes the first part: `v1.37.2-12` is followed by
+  `v1.37.3-13`.
+- **A kvz-only fix** changes only the number: `v1.37.2-12` is followed by
+  `v1.37.2-13`.
 - **Sorting:** the release number alone orders every release, across Kubernetes
   versions.
 - **The binary:** `kvz version` prints both parts:
-  `kvz v1.35.10-12 (Kubernetes v1.35.10)`. Builds that aren't from a release tag
-  report `v1.35.10-dev+<commit>`.
+  `kvz v1.37.2-12 (Kubernetes v1.37.2)`. Builds that aren't from a release tag
+  report `v1.37.2-dev+<commit>`.
 
 In strict semver, a hyphen marks a pre-release, so semver tools would sort
-`v1.35.10-12` before `v1.35.10`. Homebrew, Go and GitHub don't apply that rule,
-and kvz never publishes a bare `v1.35.10`, so this doesn't come up in practice.
+`v1.37.2-12` before `v1.37.2`. Homebrew, Go and GitHub don't apply that rule,
+and kvz never publishes a bare `v1.37.2`, so this doesn't come up in practice.
 
 ## Cutting a release
 

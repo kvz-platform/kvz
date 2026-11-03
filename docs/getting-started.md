@@ -23,8 +23,8 @@ Without Homebrew, download `kvz-<version>-darwin-arm64.tar.gz` from the
 `bin/kvz` from inside it (it finds the kernel in `share/kvz/kernel` next to it):
 
 ```sh
-tar -xzf kvz-v1.35.10-1-darwin-arm64.tar.gz
-cd kvz-v1.35.10-1-darwin-arm64
+tar -xzf kvz-v1.37.2-2-darwin-arm64.tar.gz
+cd kvz-v1.37.2-2-darwin-arm64
 xattr -dr com.apple.quarantine .   # only if a browser downloaded it
 ./bin/kvz server
 ```

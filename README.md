@@ -65,6 +65,7 @@ Full tables and method: [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
 | [Runtimes](docs/runtimes.md) | Linux, macOS and native pods: how each works and when to use it |
 | [Kubernetes features](docs/kubernetes-features.md) | What works today, and the known limits |
 | [Operations](docs/operations.md) | Flags, files, snapshots, upgrades and uninstalling |
+| [Automated upgrades](docs/upgrades.md) | Roll a new kvz release across the cluster with k3s-style Plans |
 | [Architecture](docs/ARCHITECTURE.md) | How kvz embeds Kubernetes on macOS |
 | [Benchmarks](docs/BENCHMARKS.md) | Every result, per machine, with the method |
 | [Optimization report](docs/REPORT.md) | How Linux pods went from 12 s to 0.25 s |

@@ -54,16 +54,21 @@ kvz server
 ```
 
 kvz starts etcd, the API server, the scheduler, the controllers and a local
-node, all in this one process. When it's ready it prints two things:
+node, all in this one process. When it's ready it prints:
 
 ```
 kvz server ready in 1.7s
   export KUBECONFIG=/Users/you/.kvz/kubeconfig.yaml
-  join: kvz agent --server https://192.168.1.20:6443 --token K10…::…
+  join: kvz agent --server https://192.168.1.20:6443 --token <token in /Users/you/.kvz/join-token>
+  logs: /Users/you/.kvz/kvz.log (--verbose to stream them here)
 ```
 
 Copy the `export` line into another terminal. The `join` line is for adding
-more Macs later.
+more Macs later. It doesn't show the join token itself, so the output is safe
+to share; the token is in the file it names. The Kubernetes components log to
+`kvz.log` rather than the terminal; run `kvz server --verbose` to see them
+live. (When kvz runs as a service, or its output goes to a file or pipe, the
+full logs go to that output as usual.)
 
 ## 4. Run a Linux pod
 
@@ -131,7 +136,8 @@ macOS allows two macOS VMs per Mac. Extra macOS pods wait with the reason
 
 ## 7. Add more Macs
 
-On each extra Mac, install kvz and run the `join` command the server printed:
+On each extra Mac, install kvz and run the `join` command the server printed,
+with the token from the server's `~/.kvz/join-token`:
 
 ```sh
 kvz agent --server https://192.168.1.20:6443 --token K10…::…

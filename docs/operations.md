@@ -41,6 +41,7 @@
 | `--max-pods` | `1000` | Pod capacity of this node |
 | `--kubelet-port` | `10250` | Port for `logs`, `exec` and metrics |
 | `--overlay-port` | `6446` | Port of the pod network link between nodes |
+| `--verbose` | off | Stream component logs to the terminal instead of `kvz.log` |
 
 ## Files
 
@@ -51,6 +52,8 @@
 | `~/.kvz/server/manifests/` | YAML here is applied automatically, like k3s |
 | `~/.kvz/registries.yaml` | Registry mirrors and credentials (`KVZ_REGISTRIES` overrides the path) |
 | `~/.kvz/server/db/snapshots/` | etcd snapshots |
+| `~/.kvz/kvz.log` | Component logs when kvz runs in a terminal (the previous run's log is `kvz.log.1`) |
+| `~/.kvz/join-token` | The token other Macs join with (`kvz agent --token`) |
 | `~/.kvz/logs/` | Logs from the launchd service |
 | `~/Library/LaunchAgents/dev.kvz.server.plist` | The installed service (or `dev.kvz.agent.plist`) |
 

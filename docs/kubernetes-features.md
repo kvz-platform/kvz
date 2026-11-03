@@ -79,6 +79,13 @@ kvz also bundles a version-matched kubectl as
 - PersistentVolumeClaims through the built-in local-path provisioner, which is
   the default StorageClass
 - Service account tokens bound to the pod, so in-cluster clients work
+- Image volumes (`volumes[].image`): an OCI image's files mounted read-only,
+  straight from the image store with nothing copied
+- `clusterTrustBundle` projections (CA bundles by name, or by signer and
+  label selector) and `podCertificate` projections (a per-pod key and
+  certificate from a signer, refreshed before expiry), using the kubelet's own
+  managers. Their files keep the volume's default mode: kvz can't yet set the
+  per-file owner (`user`, `fsGroup`) that makes the kubelet use 0600.
 
 ## Images
 

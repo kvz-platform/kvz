@@ -11,6 +11,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
 
+	"github.com/google/go-containerregistry/pkg/authn"
+
 	"github.com/GrowlyX/kvz/pkg/image"
 	rt "github.com/GrowlyX/kvz/pkg/runtime"
 )
@@ -20,16 +22,7 @@ import (
 // and are retried with backoff until success or pod deletion (kubelet
 // semantics) instead of failing the pod.
 func (b *Backend) ensureImages(ctx context.Context, p *corev1.Pod, ps *pod) error {
-	var payloads []map[string][]byte
-	for _, ref := range p.Spec.ImagePullSecrets {
-		if b.vols.Secrets == nil {
-			break
-		}
-		if sec, err := b.vols.Secrets.Secrets(p.Namespace).Get(ref.Name); err == nil {
-			payloads = append(payloads, sec.Data)
-		}
-	}
-	kc := image.Keychain(payloads)
+	kc := b.keychainFor(p)
 	ps.images = map[string]*image.Image{}
 	all := append(append([]corev1.Container{}, p.Spec.InitContainers...), p.Spec.Containers...)
 	backoff := time.Second
@@ -119,4 +112,42 @@ func (b *Backend) forwardHostPorts(p *corev1.Pod, ps *pod) {
 			ps.listeners = append(ps.listeners, cl)
 		}
 	}
+}
+
+// keychainFor resolves registry credentials from the pod's imagePullSecrets.
+func (b *Backend) keychainFor(p *corev1.Pod) authn.Keychain {
+	var payloads []map[string][]byte
+	for _, ref := range p.Spec.ImagePullSecrets {
+		if b.vols.Secrets == nil {
+			break
+		}
+		if sec, err := b.vols.Secrets.Secrets(p.Namespace).Get(ref.Name); err == nil {
+			payloads = append(payloads, sec.Data)
+		}
+	}
+	return image.Keychain(payloads)
+}
+
+// imageVolume resolves an image volume (spec.volumes[].image): the image is
+// pulled under its pull policy with the pod's pull secrets, and its unpacked
+// rootfs in the image store is mounted read-only. The store is already shared
+// into every pod VM, so this adds no device and copies nothing.
+func (b *Backend) imageVolume(p *corev1.Pod, ref, policy string) (string, error) {
+	if policy == "" {
+		policy = image.PullIfNotPresent
+	}
+	fresh := policy == image.PullAlways || !b.images.Has(ref)
+	if fresh {
+		b.t.Event(p.Namespace, p.Name, corev1.EventTypeNormal, "Pulling", "Pulling image %q", ref)
+	}
+	t0 := time.Now()
+	im, err := b.images.Ensure(ref, policy, b.keychainFor(p))
+	if err != nil {
+		b.t.Event(p.Namespace, p.Name, corev1.EventTypeWarning, "Failed", "Failed to pull image %q: %v", ref, err)
+		return "", err
+	}
+	if fresh {
+		b.t.Event(p.Namespace, p.Name, corev1.EventTypeNormal, "Pulled", "Successfully pulled image %q in %s", ref, time.Since(t0).Round(time.Millisecond))
+	}
+	return im.Rootfs, nil
 }

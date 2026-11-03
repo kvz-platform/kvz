@@ -121,9 +121,13 @@ func (m *Materializer) render(pod *corev1.Pod, v corev1.Volume, dst string, refr
 		return c, nil
 	case v.Projected != nil:
 		c := newContent(v.Projected.DefaultMode)
-		for _, src := range v.Projected.Sources {
+		for i, src := range v.Projected.Sources {
 			var err error
 			switch {
+			case src.ClusterTrustBundle != nil && m.TrustBundles != nil:
+				err = m.trustBundle(src.ClusterTrustBundle, c)
+			case src.PodCertificate != nil && m.PodCerts != nil:
+				err = m.podCertificate(pod, v.Name, i, src.PodCertificate, c)
 			case src.ConfigMap != nil:
 				err = m.configMap(pod.Namespace, src.ConfigMap.Name, src.ConfigMap.Items, isOpt(src.ConfigMap.Optional), c)
 			case src.Secret != nil:
@@ -141,6 +145,54 @@ func (m *Materializer) render(pod *corev1.Pod, v corev1.Volume, dst string, refr
 	}
 	return newContent(nil), nil
 }
+
+// trustBundle renders a clusterTrustBundle source: the PEM trust anchors of
+// one bundle by name, or of every bundle for a signer matching a label
+// selector, through the kubelet's ClusterTrustBundle manager.
+func (m *Materializer) trustBundle(src *corev1.ClusterTrustBundleProjection, c *content) error {
+	ctx := context.Background()
+	optional := isOpt(src.Optional)
+	var pem []byte
+	var err error
+	switch {
+	case src.Name != nil:
+		pem, err = m.TrustBundles.GetTrustAnchorsByName(ctx, *src.Name, optional)
+	case src.SignerName != nil:
+		pem, err = m.TrustBundles.GetTrustAnchorsBySigner(ctx, *src.SignerName, src.LabelSelector, optional)
+	default:
+		err = fmt.Errorf("ClusterTrustBundle projection requires either name or signerName to be set")
+	}
+	if err != nil {
+		return err
+	}
+	c.files[src.Path] = pem
+	return nil
+}
+
+// podCertificate renders a podCertificate source from the credentials the
+// kubelet's pod certificate manager requested for this pod (a key and the
+// signer-issued chain), refreshed by the manager before they expire. Until
+// the signer issues them this fails, and the pod waits in ContainerCreating.
+func (m *Materializer) podCertificate(pod *corev1.Pod, volName string, idx int, src *corev1.PodCertificateProjection, c *content) error {
+	key, chain, err := m.PodCerts.GetPodCertificateCredentialBundle(context.Background(), pod.Namespace, pod.Name, string(pod.UID), volName, idx)
+	if err != nil {
+		return fmt.Errorf("pod certificate for volume %q: %w", volName, err)
+	}
+	put := func(path string, b []byte) {
+		if path != "" {
+			c.files[path] = b
+		}
+	}
+	put(src.CredentialBundlePath, append(append([]byte{}, key...), chain...))
+	put(src.KeyPath, key)
+	put(src.CertificateChainPath, chain)
+	return nil
+}
+
+// Files keep the volume's default mode. The kubelet writes these 0600 and
+// chowns them to the pod's user or fsGroup; kvz can't chown files on its
+// host-side volume share yet, so 0600 would make them unreadable to non-root
+// containers (service-account tokens are handled the same way).
 
 func (m *Materializer) token(pod *corev1.Pod, t *corev1.ServiceAccountTokenProjection, dst string, refresh bool, c *content) error {
 	exp := int64(24 * 3600)

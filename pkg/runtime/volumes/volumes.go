@@ -18,6 +18,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	corev1listers "k8s.io/client-go/listers/core/v1"
+	"k8s.io/kubernetes/pkg/kubelet/clustertrustbundle"
+	"k8s.io/kubernetes/pkg/kubelet/podcertificate"
 )
 
 // TmpfsPrefix marks a memory-backed emptyDir in mount specs:
@@ -28,6 +30,16 @@ type Materializer struct {
 	ConfigMaps corev1listers.ConfigMapLister
 	Secrets    corev1listers.SecretLister
 	Client     kubernetes.Interface // for projected service-account tokens
+
+	// The kubelet's own managers for clusterTrustBundle and podCertificate
+	// projected volume sources (nil disables those sources).
+	TrustBundles clustertrustbundle.Manager
+	PodCerts     podcertificate.Manager
+
+	// Images resolves an image volume: it pulls ref under the pull policy
+	// and returns the host directory of the unpacked image (mounted
+	// read-only). Nil disables image volumes.
+	Images func(pod *corev1.Pod, ref, policy string) (string, error)
 }
 
 // Materialize writes volume contents under podDir/volumes and returns, per
@@ -60,6 +72,12 @@ func (m *Materializer) Materialize(pod *corev1.Pod, podDir string) (map[string][
 					f.Close()
 				}
 			}
+		case v.Image != nil && m.Images != nil:
+			path, err := m.Images(pod, v.Image.Reference, string(v.Image.PullPolicy))
+			if err != nil {
+				return nil, fmt.Errorf("image volume %q: %w", v.Name, err)
+			}
+			dst = path
 		case v.PersistentVolumeClaim != nil && m.Client != nil:
 			path, err := m.pvcPath(pod.Namespace, v.PersistentVolumeClaim.ClaimName)
 			if err != nil {
@@ -79,11 +97,11 @@ func (m *Materializer) Materialize(pod *corev1.Pod, podDir string) (map[string][
 		}
 		paths[v.Name] = dst
 	}
-	// configMap, secret, downwardAPI and projected volumes are always mounted
-	// read-only by the kubelet.
+	// configMap, secret, downwardAPI, projected and image volumes are always
+	// mounted read-only by the kubelet.
 	apiVol := map[string]bool{}
 	for _, v := range pod.Spec.Volumes {
-		if v.ConfigMap != nil || v.Secret != nil || v.DownwardAPI != nil || v.Projected != nil {
+		if v.ConfigMap != nil || v.Secret != nil || v.DownwardAPI != nil || v.Projected != nil || v.Image != nil {
 			apiVol[v.Name] = true
 		}
 	}
